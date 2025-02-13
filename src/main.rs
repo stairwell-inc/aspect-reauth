@@ -64,8 +64,8 @@ fn main() -> Result<()> {
         let mut child = Command::new(helper_exe)
             .arg("get")
             .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
             .stdout(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
         let mut stdin = child.stdin.take().context("failed to open stdin")?;

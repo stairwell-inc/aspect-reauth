@@ -137,18 +137,18 @@ fn main() -> Result<()> {
         .stderr(Stdio::piped())
         .spawn()
         .context("failed to spawn ssh")?;
-    {
-        let entry = Entry::new("AspectWorkflows", &args.remote)
-            .context("failed to find aspect credential")?;
-        let credential = entry
-            .get_password()
-            .context("failed to get aspect credential from keychain")?;
-        let mut stdin = child.stdin.take().context("failed to open stdin")?;
-        thread::spawn(move || -> Result<()> {
-            stdin.write_all(credential.as_bytes())?;
-            Ok(())
-        });
-    }
+
+    let entry =
+        Entry::new("AspectWorkflows", &args.remote).context("failed to find aspect credential")?;
+    let credential = entry
+        .get_password()
+        .context("failed to get aspect credential from keychain")?;
+    let mut stdin = child.stdin.take().context("failed to open stdin")?;
+    thread::spawn(move || -> Result<()> {
+        stdin.write_all(credential.as_bytes())?;
+        Ok(())
+    });
+
     let output = child.wait_with_output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

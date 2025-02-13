@@ -72,6 +72,8 @@ fn main() -> Result<()> {
         let output = child.wait_with_output()?;
         if !output.status.success() {
             need_login = true;
+        } else {
+            println!("Reusing existing credentials.");
         }
     }
 

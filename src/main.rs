@@ -124,5 +124,6 @@ fn main() -> Result<()> {
     if !status.success() {
         return Err(format!("ssh ... keyctl: {:?}", status).into());
     }
+    println!("Aspect credentials synced to {}. Have a nice day.", args.host);
     Ok(())
 }

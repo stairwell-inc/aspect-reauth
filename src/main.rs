@@ -54,14 +54,11 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let helper_command = Command::new(&args.credential_helper);
-    let helper_exe = helper_command.get_program();
-
     let mut need_login = args.force;
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
         // "credential-helper login", we do it.
-        let mut child = Command::new(helper_exe)
+        let mut child = Command::new(&args.credential_helper)
             .arg("get")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -99,7 +96,7 @@ fn main() -> Result<()> {
     }
 
     if need_login {
-        let status = Command::new(helper_exe)
+        let status = Command::new(&args.credential_helper)
             .arg("login")
             .arg(&args.remote)
             .stdin(Stdio::null())

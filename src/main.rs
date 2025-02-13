@@ -87,7 +87,7 @@ fn main() -> Result<()> {
             if !re.is_match(&stderr) {
                 anyhow::bail!(
                     "{} get: {}\n\n{}",
-                    &args.credential_helper,
+                    args.credential_helper,
                     output.status,
                     stderr.trim(),
                 );
@@ -154,7 +154,7 @@ fn main() -> Result<()> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
             "ssh {} keyctl padd: {}\n\n{}",
-            &args.host,
+            args.host,
             output.status,
             stderr.trim(),
         );

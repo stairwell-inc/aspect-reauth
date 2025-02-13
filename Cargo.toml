@@ -1,0 +1,6 @@
+[package]
+name = "aspect-reauth"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

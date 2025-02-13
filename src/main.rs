@@ -93,6 +93,7 @@ fn main() -> Result<()> {
     let keychain = if args.persist { "@u" } else { "@s" };
 
     let mut child = Command::new("ssh")
+        // cf. scp.c in openssh-portable.
         .args([
             "-x",
             "-oPermitLocalCommand=no",

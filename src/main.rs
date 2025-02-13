@@ -30,7 +30,7 @@ const DEFAULT_HELPER: &str = "aspect-credential-helper";
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    /// VM SSH hostname to which to sync credential
+    /// SSH hostname to which to sync credential
     #[arg(default_value_t = String::from("devbox"))]
     host: String,
 

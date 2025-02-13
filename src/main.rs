@@ -110,9 +110,11 @@ fn main() -> Result<()> {
         }
     }
 
+    // We parallelize the SSH connection with the key read since both of these can take a little
+    // time. If the read fails, we wind up sending nothing to padd, which causes it to fail with
+    // "invalid argument".
     let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
     let keychain = if args.persist { "@u" } else { "@s" };
-
     let mut child = Command::new("ssh")
         // cf. scp.c in openssh-portable.
         .args([

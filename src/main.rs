@@ -24,6 +24,9 @@ use keyring::Entry;
 
 type Result<T> = result::Result<T, Box<dyn error::Error>>;
 
+const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
+const DEFAULT_HELPER: &str = "aspect-credential-helper";
+
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
@@ -32,11 +35,11 @@ struct Args {
     host: String,
 
     /// Aspect remote DNS name
-    #[arg(env = "ASPECT_REMOTE", default_value_t = String::from("aw-remote-ext.buildremote.stairwell.io"), long)]
+    #[arg(env = "ASPECT_REMOTE", default_value_t = DEFAULT_REMOTE.into(), long)]
     remote: String,
 
     /// Aspect credential helper executable name
-    #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value_t = String::from("aspect-credential-helper"), long)]
+    #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value_t = DEFAULT_HELPER.into(), long)]
     credential_helper: String,
 
     /// Force re-login even if the credentials are still valid

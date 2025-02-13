@@ -13,16 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-use core::{error, result, str};
 use std::{
     io::Write,
     process::{Command, Stdio},
+    thread,
 };
 
+use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
-
-type Result<T> = result::Result<T, Box<dyn error::Error>>;
+use regex::Regex;
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -59,18 +59,39 @@ fn main() -> Result<()> {
 
     let mut need_login = args.force;
     if !args.force {
+        // Check the error output from the credential helper. If it says we need to rerun
+        // "credential-helper login", we do it.
         let mut child = Command::new(helper_exe)
             .arg("get")
             .stdin(Stdio::piped())
             .stderr(Stdio::piped())
             .stdout(Stdio::null())
-            .spawn()?;
-        {
-            let mut stdin = child.stdin.take().expect("failed to open stdin");
-            writeln!(stdin, r#"{{"uri":"https://{}"}}"#, args.remote)?;
-        }
-        let output = child.wait_with_output()?;
+            .spawn()
+            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+        let mut stdin = child.stdin.take().context("failed to open stdin")?;
+        let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
+        thread::spawn(move || -> Result<()> {
+            stdin.write_all(test_string.as_bytes())?;
+            Ok(())
+        });
+        let output = child
+            .wait_with_output()
+            .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let re = Regex::new(&format!(
+                r"(?mis)please\s+run.*{}\s+login",
+                regex::escape(&args.credential_helper)
+            ))
+            .context("failed to compile regex")?;
+            if !re.is_match(&stderr) {
+                anyhow::bail!(
+                    "{} get: {}\n\n{}",
+                    &args.credential_helper,
+                    output.status,
+                    stderr.trim(),
+                );
+            }
             need_login = true;
         } else {
             println!("Reusing existing credentials.");
@@ -78,16 +99,14 @@ fn main() -> Result<()> {
     }
 
     if need_login {
-        println!("Your browser will be opened.");
-        let output = Command::new(helper_exe)
+        let status = Command::new(helper_exe)
             .arg("login")
             .arg(&args.remote)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()?;
-        if !output.status.success() {
-            return Err(format!("{} login: {:?}", &args.credential_helper, &output).into());
+            .status()
+            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+        if !status.success() {
+            anyhow::bail!("{} login: {}", args.credential_helper, status);
         }
     }
 
@@ -115,17 +134,34 @@ fn main() -> Result<()> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to spawn ssh")?;
     {
-        let entry = Entry::new("AspectWorkflows", &args.remote)?;
-        let credential = entry.get_password()?;
-        let mut stdin = child.stdin.take().expect("failed to open stdin");
-        stdin.write_all(credential.as_bytes())?;
+        let entry = Entry::new("AspectWorkflows", &args.remote)
+            .context("failed to find aspect credential")?;
+        let credential = entry
+            .get_password()
+            .context("failed to get aspect credential from keychain")?;
+        let mut stdin = child.stdin.take().context("failed to open stdin")?;
+        thread::spawn(move || -> Result<()> {
+            stdin.write_all(credential.as_bytes())?;
+            Ok(())
+        });
     }
-    let status = child.wait()?;
-    if !status.success() {
-        return Err(format!("ssh ... keyctl: {:?}", status).into());
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "ssh {} keyctl padd: {}\n\n{}",
+            &args.host,
+            output.status,
+            stderr.trim(),
+        );
     }
-    println!("Aspect credentials synced to {}. Have a nice day.", args.host);
+    println!(
+        "Aspect credentials synced to {}. Have a nice day.",
+        args.host
+    );
     Ok(())
 }

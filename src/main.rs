@@ -25,7 +25,7 @@ use std::{
 use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
-use regex::Regex;
+use regex::bytes::Regex;
 use tempfile::{Builder, TempDir};
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
@@ -90,18 +90,17 @@ fn main() -> Result<()> {
             .wait_with_output()
             .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             let re = Regex::new(&format!(
                 r"(?mis)please\s+run.*{}\s+login",
                 regex::escape(&args.credential_helper)
             ))
             .context("failed to compile regex")?;
-            if !re.is_match(&stderr) {
+            if !re.is_match(&output.stderr) {
                 anyhow::bail!(
                     "{} get: {}\n\n{}",
                     args.credential_helper,
                     output.status,
-                    stderr.trim(),
+                    String::from_utf8_lossy(&output.stderr).trim(),
                 );
             }
         } else {
@@ -144,12 +143,11 @@ fn main() -> Result<()> {
 
     let output = child.wait_with_output()?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
             "ssh {} keyctl padd: {}\n\n{}",
             args.host,
             output.status,
-            stderr.trim(),
+            String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
     println!(

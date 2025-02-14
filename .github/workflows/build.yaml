@@ -29,7 +29,7 @@ jobs:
     - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
       if: matrix.os == 'ubuntu-latest'
     - uses: stairwell-inc/checkout@v4
-    - run: rustup update
+    - run: rustup target add ${{ matrix.target }} && rustup update
     - run: cargo build --release --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:

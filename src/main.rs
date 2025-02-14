@@ -180,6 +180,7 @@ impl SshMux {
         };
         let mut cmd = Command::new("ssh");
         if !reuse_socket {
+            // cf. scp.c in openssh-portable.
             cmd.args([
                 "-xMTS",
                 &ret.control_path().to_string_lossy(),

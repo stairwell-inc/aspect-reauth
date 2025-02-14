@@ -26,6 +26,8 @@ jobs:
             target: x86_64-unknown-linux-gnu
             suffix: ""
     steps:
+    - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
+      if: matrix.os == 'ubuntu-latest'
     - uses: stairwell-inc/checkout@v4
     - run: rustup update
     - run: cargo build --release --target ${{ matrix.target }}

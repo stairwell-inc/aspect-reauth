@@ -11,3 +11,4 @@ anyhow = "1.0.95"
 clap = { version = "4.5.29", features = ["env", "derive"] }
 keyring = { version = "3.6.1", features = ["apple-native", "windows-native", "sync-secret-service"] }
 regex = "1.11.1"
+tempfile = "3.16.0"

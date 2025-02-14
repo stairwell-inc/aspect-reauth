@@ -14,7 +14,10 @@
 // limitations under the License.
 //
 use std::{
+    fs::Permissions,
     io::Write,
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
     process::{Command, Stdio},
     thread,
 };
@@ -23,6 +26,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::Regex;
+use tempfile::{Builder, TempDir};
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -49,22 +53,33 @@ struct Args {
     /// Use the user (rather than session) keyring on the VM
     #[arg(short, long)]
     persist: bool,
-}
 
+    /// Reuse existing socket (host has ControlMaster=auto and ControlPersist)
+    #[arg(short, long)]
+    reuse_socket: bool,
+}
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let mut need_login = args.force;
+    let ssh = SshMux::new(&args.host, args.reuse_socket)
+        .with_context(|| format!("failed to ssh to {}", &args.host))?;
+
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
         // "credential-helper login", we do it.
-        let mut child = Command::new(&args.credential_helper)
+        let mut child = ssh
+            .command(&args.credential_helper)
             .arg("get")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
-            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+            .with_context(|| {
+                format!(
+                    "failed to run {} on {}",
+                    &args.credential_helper, &args.host
+                )
+            })?;
         let mut stdin = child.stdin.take().context("failed to open stdin")?;
         let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
         thread::spawn(move || -> Result<()> {
@@ -89,59 +104,38 @@ fn main() -> Result<()> {
                     stderr.trim(),
                 );
             }
-            need_login = true;
         } else {
-            println!("Reusing existing credentials.");
+            println!("Credential refresh not needed. Have a nice day.");
+            return Ok(());
         }
     }
 
-    if need_login {
-        let status = Command::new(&args.credential_helper)
-            .arg("login")
-            .arg(&args.remote)
-            .stdin(Stdio::null())
-            .status()
-            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
-        if !status.success() {
-            anyhow::bail!("{} login: {}", args.credential_helper, status);
-        }
+    let status = Command::new(&args.credential_helper)
+        .arg("login")
+        .arg(&args.remote)
+        .stdin(Stdio::null())
+        .status()
+        .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+    if !status.success() {
+        anyhow::bail!("{} login: {}", args.credential_helper, status);
     }
-
-    // We parallelize the SSH connection with the key read since both of these can take a little
-    // time. If the read fails, we wind up sending nothing to padd, which causes it to fail with
-    // "invalid argument".
-    let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
-    let keychain = if args.persist { "@u" } else { "@s" };
-    let mut child = Command::new("ssh")
-        // cf. scp.c in openssh-portable.
-        .args([
-            "-x",
-            "-oPermitLocalCommand=no",
-            "-oClearAllForwardings=yes",
-            "-oRemoteCommand=none",
-            "-oRequestTTY=no",
-            "-oControlMaster=no",
-            "-oForwardAgent=no",
-            "-oBatchMode=yes",
-            "--",
-            &args.host,
-            "keyctl",
-            "padd",
-            "user",
-            &key_name,
-            keychain,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn ssh")?;
 
     let entry =
         Entry::new("AspectWorkflows", &args.remote).context("failed to find aspect credential")?;
     let credential = entry
         .get_password()
         .context("failed to get aspect credential from keychain")?;
+
+    let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
+    let keychain = if args.persist { "@u" } else { "@s" };
+    let mut child = ssh
+        .command("keyctl")
+        .args(["padd", "user", &key_name, keychain])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to run keyctl on {}", &args.host))?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
     thread::spawn(move || -> Result<()> {
         stdin.write_all(credential.as_bytes())?;
@@ -163,4 +157,102 @@ fn main() -> Result<()> {
         args.host
     );
     Ok(())
+}
+
+struct SshMux {
+    temp_dir: TempDir,
+    host: String,
+    open_socket: bool,
+}
+
+impl SshMux {
+    fn new(host: &str, reuse_socket: bool) -> Result<Self> {
+        let temp_dir = Builder::new()
+            .prefix("aspect-reauth-")
+            .permissions(Permissions::from_mode(0o700))
+            .tempdir()
+            .context("failed to create temporary directory")?;
+        let host = host.to_string();
+        let ret = SshMux {
+            temp_dir,
+            host,
+            open_socket: !reuse_socket,
+        };
+        let mut cmd = Command::new("ssh");
+        if reuse_socket {
+            cmd.args(["--", &ret.host, "exit"]);
+        } else {
+            cmd.args([
+                "-xMTS",
+                &ret.control_path().to_string_lossy(),
+                "-oControlPersist=yes",
+                "-oPermitLocalCommand=no",
+                "-oClearAllForwardings=yes",
+                "-oRemoteCommand=none",
+                "-oForwardAgent=no",
+                "-oBatchMode=yes",
+                "--",
+                &ret.host,
+                "exit",
+            ]);
+        }
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("failed to start SSH control master")?;
+        Ok(ret)
+    }
+
+    fn command(&self, command: &str) -> Command {
+        let mut ret = Command::new("ssh");
+        if self.open_socket {
+            ret.args(["-S", &self.control_path().to_string_lossy()]);
+        }
+        ret.args([
+            "-xT",
+            "-oPermitLocalCommand=no",
+            "-oClearAllForwardings=yes",
+            "-oRemoteCommand=none",
+            "-oForwardAgent=no",
+            "-oBatchMode=yes",
+            "--",
+            &self.host,
+            command,
+        ]);
+        ret
+    }
+
+    fn control_path(&self) -> PathBuf {
+        self.temp_dir.path().join("sock")
+    }
+
+    fn cleanup(&mut self) -> Result<()> {
+        if !self.open_socket {
+            return Ok(());
+        }
+        self.open_socket = false;
+        Command::new("ssh")
+            .args([
+                "-S",
+                &self.control_path().to_string_lossy(),
+                "-Oexit",
+                "--",
+                &self.host,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .context("failed to cleanup SSH control master")?;
+        Ok(())
+    }
+}
+
+impl Drop for SshMux {
+    fn drop(&mut self) {
+        if let Err(e) = self.cleanup() {
+            eprintln!("cleanup ssh: {}", e);
+        }
+    }
 }

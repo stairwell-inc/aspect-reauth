@@ -14,9 +14,7 @@
 // limitations under the License.
 //
 use std::{
-    fs::Permissions,
     io::Write,
-    os::unix::fs::PermissionsExt,
     path::PathBuf,
     process::{Command, Stdio},
     thread,
@@ -26,7 +24,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
-use tempfile::{Builder, TempDir};
+use tempfile::TempDir;
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -165,11 +163,16 @@ struct SshMux {
 
 impl SshMux {
     fn new(host: &str, reuse_socket: bool) -> Result<Self> {
-        let temp_dir = Builder::new()
-            .prefix("aspect-reauth-")
-            .permissions(Permissions::from_mode(0o700))
-            .tempdir()
+        let temp_dir = TempDir::with_prefix("aspect-reauth-")
             .context("failed to create temporary directory")?;
+        #[cfg(unix)]
+        {
+            use std::{
+                fs::{set_permissions, Permissions},
+                os::unix::fs::PermissionsExt,
+            };
+            set_permissions(temp_dir.path(), Permissions::from_mode(0o700))?;
+        }
         let host = host.to_string();
         let ret = SshMux {
             temp_dir,

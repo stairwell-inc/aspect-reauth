@@ -1,6 +1,6 @@
 [package]
 name = "aspect-reauth"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Stairwell, Inc."]
 edition = "2021"
 description = "Sync fresh Aspect credentials with your dev VM"
@@ -11,3 +11,4 @@ anyhow = "1.0.95"
 clap = { version = "4.5.29", features = ["env", "derive"] }
 keyring = { version = "3.6.1", features = ["apple-native", "windows-native", "sync-secret-service"] }
 regex = "1.11.1"
+tempfile = "3.16.0"

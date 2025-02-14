@@ -179,9 +179,7 @@ impl SshMux {
             open_socket: !reuse_socket,
         };
         let mut cmd = Command::new("ssh");
-        if reuse_socket {
-            cmd.args(["--", &ret.host, "exit"]);
-        } else {
+        if !reuse_socket {
             cmd.args([
                 "-xMTS",
                 &ret.control_path().to_string_lossy(),
@@ -191,12 +189,13 @@ impl SshMux {
                 "-oRemoteCommand=none",
                 "-oForwardAgent=no",
                 "-oBatchMode=yes",
-                "--",
-                &ret.host,
-                "exit",
             ]);
         }
-        cmd.stdin(Stdio::null())
+        // If we're reusing an existing socket but the host has ControlMaster=auto and no currently
+        // running master, we do not want the created master to have the restrictive set of options
+        // we pass to individual commands, so we still run an initial ssh to open a normal session.
+        cmd.args(["--", &ret.host, "true"])
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
             .status()

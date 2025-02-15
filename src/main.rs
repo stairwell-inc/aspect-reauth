@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
-use tempfile::TempDir;
+use tempfile::{Builder, TempDir};
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -157,35 +157,31 @@ fn main() -> Result<()> {
 }
 
 struct SshMux {
-    temp_dir: TempDir,
+    socket_dir: Option<TempDir>,
     host: String,
-    open_socket: bool,
 }
 
 impl SshMux {
     fn new(host: &str, reuse_socket: bool) -> Result<Self> {
-        let temp_dir = TempDir::with_prefix("aspect-reauth-")
-            .context("failed to create temporary directory")?;
-        #[cfg(unix)]
-        {
-            use std::{
-                fs::{set_permissions, Permissions},
-                os::unix::fs::PermissionsExt,
-            };
-            set_permissions(temp_dir.path(), Permissions::from_mode(0o700))?;
-        }
+        let socket_dir = (!reuse_socket)
+            .then(|| {
+                let mut builder = Builder::new();
+                #[cfg(unix)]
+                {
+                    use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+                    builder.permissions(Permissions::from_mode(0o700));
+                }
+                builder.prefix("aspect-reauth-").tempdir()
+            })
+            .transpose()?;
         let host = host.to_string();
-        let ret = SshMux {
-            temp_dir,
-            host,
-            open_socket: !reuse_socket,
-        };
+        let ret = SshMux { socket_dir, host };
         let mut cmd = Command::new("ssh");
-        if !reuse_socket {
+        if ret.socket_dir.is_some() {
             // cf. scp.c in openssh-portable.
             cmd.args([
                 "-xMTS",
-                &ret.control_path().to_string_lossy(),
+                &ret.control_path()?.to_string_lossy(),
                 "-oControlPersist=yes",
                 "-oPermitLocalCommand=no",
                 "-oClearAllForwardings=yes",
@@ -208,8 +204,9 @@ impl SshMux {
 
     fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
-        if self.open_socket {
-            ret.args(["-S", &self.control_path().to_string_lossy()]);
+        if self.socket_dir.is_some() {
+            // unwrap is ok here: control_path only fails if socket_dir is None.
+            ret.args(["-S", &self.control_path().unwrap().to_string_lossy()]);
         }
         ret.args([
             "-xT",
@@ -225,19 +222,22 @@ impl SshMux {
         ret
     }
 
-    fn control_path(&self) -> PathBuf {
-        self.temp_dir.path().join("sock")
+    fn control_path(&self) -> Result<PathBuf> {
+        self.socket_dir
+            .as_ref()
+            .map(|d| d.path().join("sock"))
+            .context("failed to unwrap socket dir")
     }
 
     fn cleanup(&mut self) -> Result<()> {
-        if !self.open_socket {
+        let Some(socket_dir) = self.socket_dir.take() else {
             return Ok(());
-        }
-        self.open_socket = false;
+        };
+        let control_path = socket_dir.into_path().join("sock");
         Command::new("ssh")
             .args([
                 "-S",
-                &self.control_path().to_string_lossy(),
+                &control_path.to_string_lossy(),
                 "-Oexit",
                 "--",
                 &self.host,

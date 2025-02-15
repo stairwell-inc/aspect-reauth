@@ -158,28 +158,34 @@ fn main() -> Result<()> {
 
 struct SshMux<'a> {
     host: &'a str,
-    socket: Option<(PathBuf, TempDir)>,
+    socket: Option<Socket>,
+}
+
+struct Socket {
+    path: PathBuf,
+    _dir: TempDir,
 }
 
 impl<'a> SshMux<'a> {
     fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
         let socket = (!reuse_socket)
-            .then(|| -> Result<(PathBuf, TempDir)> {
+            .then(|| -> Result<Socket> {
                 let mut builder = tempfile::Builder::new();
                 #[cfg(unix)]
                 {
                     use std::{fs::Permissions, os::unix::fs::PermissionsExt};
                     builder.permissions(Permissions::from_mode(0o700));
                 }
-                let dir = builder.prefix("aspect-reauth-").tempdir()?;
-                Ok((dir.path().join("sock"), dir))
+                let _dir = builder.prefix("aspect-reauth-").tempdir()?;
+                let path = _dir.path().join("sock");
+                Ok(Socket { path, _dir })
             })
             .transpose()?;
         let ret = SshMux { host, socket };
         let mut cmd = Command::new("ssh");
         if let Some(socket) = &ret.socket {
             // cf. scp.c in openssh-portable.
-            cmd.arg("-xMTS").arg(&socket.0).args([
+            cmd.arg("-xMTS").arg(&socket.path).args([
                 "-oControlPersist=yes",
                 "-oPermitLocalCommand=no",
                 "-oClearAllForwardings=yes",
@@ -203,7 +209,7 @@ impl<'a> SshMux<'a> {
     fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
         if let Some(socket) = &self.socket {
-            ret.arg("-S").arg(&socket.0);
+            ret.arg("-S").arg(&socket.path);
         }
         ret.args([
             "-xT",
@@ -225,7 +231,7 @@ impl<'a> SshMux<'a> {
         };
         Command::new("ssh")
             .arg("-S")
-            .arg(socket.0)
+            .arg(&socket.path)
             .args(["-Oexit", "--", self.host])
             .stdin(Stdio::null())
             .stdout(Stdio::null())

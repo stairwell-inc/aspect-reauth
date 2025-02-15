@@ -179,9 +179,7 @@ impl SshMux {
         let mut cmd = Command::new("ssh");
         if let Some(socket_dir) = &ret.socket_dir {
             // cf. scp.c in openssh-portable.
-            cmd.args([
-                "-xMTS",
-                &Self::control_path(socket_dir).to_string_lossy(),
+            cmd.arg("-xMTS").arg(Self::control_path(socket_dir)).args([
                 "-oControlPersist=yes",
                 "-oPermitLocalCommand=no",
                 "-oClearAllForwardings=yes",
@@ -205,7 +203,7 @@ impl SshMux {
     fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
         if let Some(socket_dir) = &self.socket_dir {
-            ret.args(["-S", &Self::control_path(socket_dir).to_string_lossy()]);
+            ret.arg("-S").arg(Self::control_path(socket_dir));
         }
         ret.args([
             "-xT",
@@ -230,13 +228,9 @@ impl SshMux {
             return Ok(());
         };
         Command::new("ssh")
-            .args([
-                "-S",
-                &Self::control_path(&socket_dir).to_string_lossy(),
-                "-Oexit",
-                "--",
-                &self.host,
-            ])
+            .arg("-S")
+            .arg(Self::control_path(&socket_dir))
+            .args(["-Oexit", "--", &self.host])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

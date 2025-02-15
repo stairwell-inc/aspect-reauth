@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
-use tempfile::{Builder, TempDir};
+use tempfile::{self, TempDir};
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -165,7 +165,7 @@ impl SshMux {
     fn new(host: &str, reuse_socket: bool) -> Result<Self> {
         let socket_dir = (!reuse_socket)
             .then(|| {
-                let mut builder = Builder::new();
+                let mut builder = tempfile::Builder::new();
                 #[cfg(unix)]
                 {
                     use std::{fs::Permissions, os::unix::fs::PermissionsExt};

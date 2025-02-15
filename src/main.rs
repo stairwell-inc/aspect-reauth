@@ -56,6 +56,7 @@ struct Args {
     #[arg(short, long)]
     reuse_socket: bool,
 }
+
 fn main() -> Result<()> {
     let args = Args::parse();
 

@@ -197,7 +197,7 @@ impl<'a> SshMux<'a> {
         // If we're reusing an existing socket but the host has ControlMaster=auto and no currently
         // running master, we do not want the created master to have the restrictive set of options
         // we pass to individual commands, so we still run an initial ssh to open a normal session.
-        cmd.args(["--", &ret.host, "true"])
+        cmd.args(["--", ret.host, "true"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
@@ -242,7 +242,7 @@ impl<'a> SshMux<'a> {
     }
 }
 
-impl<'a> Drop for SshMux<'a> {
+impl Drop for SshMux<'_> {
     fn drop(&mut self) {
         if let Err(e) = self.cleanup() {
             eprintln!("cleanup ssh: {}", e);

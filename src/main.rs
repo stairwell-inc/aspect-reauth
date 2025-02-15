@@ -158,27 +158,28 @@ fn main() -> Result<()> {
 
 struct SshMux<'a> {
     host: &'a str,
-    socket_dir: Option<TempDir>,
+    socket: Option<(PathBuf, TempDir)>,
 }
 
 impl<'a> SshMux<'a> {
     fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
-        let socket_dir = (!reuse_socket)
-            .then(|| {
+        let socket = (!reuse_socket)
+            .then(|| -> Result<(PathBuf, TempDir)> {
                 let mut builder = tempfile::Builder::new();
                 #[cfg(unix)]
                 {
                     use std::{fs::Permissions, os::unix::fs::PermissionsExt};
                     builder.permissions(Permissions::from_mode(0o700));
                 }
-                builder.prefix("aspect-reauth-").tempdir()
+                let dir = builder.prefix("aspect-reauth-").tempdir()?;
+                Ok((dir.path().join("sock"), dir))
             })
             .transpose()?;
-        let ret = SshMux { host, socket_dir };
+        let ret = SshMux { host, socket };
         let mut cmd = Command::new("ssh");
-        if let Some(socket_dir) = &ret.socket_dir {
+        if let Some(socket) = &ret.socket {
             // cf. scp.c in openssh-portable.
-            cmd.arg("-xMTS").arg(Self::control_path(socket_dir)).args([
+            cmd.arg("-xMTS").arg(&socket.0).args([
                 "-oControlPersist=yes",
                 "-oPermitLocalCommand=no",
                 "-oClearAllForwardings=yes",
@@ -201,8 +202,8 @@ impl<'a> SshMux<'a> {
 
     fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
-        if let Some(socket_dir) = &self.socket_dir {
-            ret.arg("-S").arg(Self::control_path(socket_dir));
+        if let Some(socket) = &self.socket {
+            ret.arg("-S").arg(&socket.0);
         }
         ret.args([
             "-xT",
@@ -218,17 +219,13 @@ impl<'a> SshMux<'a> {
         ret
     }
 
-    fn control_path(socket_dir: &TempDir) -> PathBuf {
-        socket_dir.path().join("sock")
-    }
-
     fn cleanup(&mut self) -> Result<()> {
-        let Some(socket_dir) = self.socket_dir.take() else {
+        let Some(socket) = self.socket.take() else {
             return Ok(());
         };
         Command::new("ssh")
             .arg("-S")
-            .arg(Self::control_path(&socket_dir))
+            .arg(socket.0)
             .args(["-Oexit", "--", self.host])
             .stdin(Stdio::null())
             .stdout(Stdio::null())

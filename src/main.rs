@@ -177,11 +177,11 @@ impl SshMux {
         let host = host.to_string();
         let ret = SshMux { socket_dir, host };
         let mut cmd = Command::new("ssh");
-        if ret.socket_dir.is_some() {
+        if let Some(socket_dir) = &ret.socket_dir {
             // cf. scp.c in openssh-portable.
             cmd.args([
                 "-xMTS",
-                &ret.control_path()?.to_string_lossy(),
+                &Self::control_path(socket_dir).to_string_lossy(),
                 "-oControlPersist=yes",
                 "-oPermitLocalCommand=no",
                 "-oClearAllForwardings=yes",
@@ -204,9 +204,8 @@ impl SshMux {
 
     fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
-        if self.socket_dir.is_some() {
-            // unwrap is ok here: control_path only fails if socket_dir is None.
-            ret.args(["-S", &self.control_path().unwrap().to_string_lossy()]);
+        if let Some(socket_dir) = &self.socket_dir {
+            ret.args(["-S", &Self::control_path(socket_dir).to_string_lossy()]);
         }
         ret.args([
             "-xT",
@@ -222,22 +221,18 @@ impl SshMux {
         ret
     }
 
-    fn control_path(&self) -> Result<PathBuf> {
-        self.socket_dir
-            .as_ref()
-            .map(|d| d.path().join("sock"))
-            .context("failed to unwrap socket dir")
+    fn control_path(socket_dir: &TempDir) -> PathBuf {
+        socket_dir.path().join("sock")
     }
 
     fn cleanup(&mut self) -> Result<()> {
         let Some(socket_dir) = self.socket_dir.take() else {
             return Ok(());
         };
-        let control_path = socket_dir.into_path().join("sock");
         Command::new("ssh")
             .args([
                 "-S",
-                &control_path.to_string_lossy(),
+                &Self::control_path(&socket_dir).to_string_lossy(),
                 "-Oexit",
                 "--",
                 &self.host,

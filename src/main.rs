@@ -157,8 +157,8 @@ fn main() -> Result<()> {
 }
 
 struct SshMux {
-    socket_dir: Option<TempDir>,
     host: String,
+    socket_dir: Option<TempDir>,
 }
 
 impl SshMux {
@@ -175,7 +175,7 @@ impl SshMux {
             })
             .transpose()?;
         let host = host.to_string();
-        let ret = SshMux { socket_dir, host };
+        let ret = SshMux { host, socket_dir };
         let mut cmd = Command::new("ssh");
         if let Some(socket_dir) = &ret.socket_dir {
             // cf. scp.c in openssh-portable.

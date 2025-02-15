@@ -156,13 +156,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-struct SshMux {
-    host: String,
+struct SshMux<'a> {
+    host: &'a str,
     socket_dir: Option<TempDir>,
 }
 
-impl SshMux {
-    fn new(host: &str, reuse_socket: bool) -> Result<Self> {
+impl<'a> SshMux<'a> {
+    fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
         let socket_dir = (!reuse_socket)
             .then(|| {
                 let mut builder = tempfile::Builder::new();
@@ -174,7 +174,6 @@ impl SshMux {
                 builder.prefix("aspect-reauth-").tempdir()
             })
             .transpose()?;
-        let host = host.to_string();
         let ret = SshMux { host, socket_dir };
         let mut cmd = Command::new("ssh");
         if let Some(socket_dir) = &ret.socket_dir {
@@ -213,7 +212,7 @@ impl SshMux {
             "-oForwardAgent=no",
             "-oBatchMode=yes",
             "--",
-            &self.host,
+            self.host,
             command,
         ]);
         ret
@@ -230,7 +229,7 @@ impl SshMux {
         Command::new("ssh")
             .arg("-S")
             .arg(Self::control_path(&socket_dir))
-            .args(["-Oexit", "--", &self.host])
+            .args(["-Oexit", "--", self.host])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -240,7 +239,7 @@ impl SshMux {
     }
 }
 
-impl Drop for SshMux {
+impl<'a> Drop for SshMux<'a> {
     fn drop(&mut self) {
         if let Err(e) = self.cleanup() {
             eprintln!("cleanup ssh: {}", e);

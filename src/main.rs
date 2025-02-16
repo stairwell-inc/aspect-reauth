@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
-use tempfile::TempDir;
+use tempfile::{self, TempDir};
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -56,6 +56,7 @@ struct Args {
     #[arg(short, long)]
     reuse_socket: bool,
 }
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -155,36 +156,36 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-struct SshMux {
-    temp_dir: TempDir,
-    host: String,
-    open_socket: bool,
+struct SshMux<'a> {
+    host: &'a str,
+    socket: Option<Socket>,
 }
 
-impl SshMux {
-    fn new(host: &str, reuse_socket: bool) -> Result<Self> {
-        let temp_dir = TempDir::with_prefix("aspect-reauth-")
-            .context("failed to create temporary directory")?;
-        #[cfg(unix)]
-        {
-            use std::{
-                fs::{set_permissions, Permissions},
-                os::unix::fs::PermissionsExt,
-            };
-            set_permissions(temp_dir.path(), Permissions::from_mode(0o700))?;
-        }
-        let host = host.to_string();
-        let ret = SshMux {
-            temp_dir,
-            host,
-            open_socket: !reuse_socket,
-        };
+struct Socket {
+    path: PathBuf,
+    _dir: TempDir,
+}
+
+impl<'a> SshMux<'a> {
+    fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
+        let socket = (!reuse_socket)
+            .then(|| -> Result<Socket> {
+                let mut builder = tempfile::Builder::new();
+                #[cfg(unix)]
+                {
+                    use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+                    builder.permissions(Permissions::from_mode(0o700));
+                }
+                let _dir = builder.prefix("aspect-reauth-").tempdir()?;
+                let path = _dir.path().join("sock");
+                Ok(Socket { path, _dir })
+            })
+            .transpose()?;
+        let ret = SshMux { host, socket };
         let mut cmd = Command::new("ssh");
-        if !reuse_socket {
+        if let Some(socket) = &ret.socket {
             // cf. scp.c in openssh-portable.
-            cmd.args([
-                "-xMTS",
-                &ret.control_path().to_string_lossy(),
+            cmd.arg("-xMTS").arg(&socket.path).args([
                 "-oControlPersist=yes",
                 "-oPermitLocalCommand=no",
                 "-oClearAllForwardings=yes",
@@ -196,7 +197,7 @@ impl SshMux {
         // If we're reusing an existing socket but the host has ControlMaster=auto and no currently
         // running master, we do not want the created master to have the restrictive set of options
         // we pass to individual commands, so we still run an initial ssh to open a normal session.
-        cmd.args(["--", &ret.host, "true"])
+        cmd.args(["--", ret.host, "true"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
@@ -207,8 +208,8 @@ impl SshMux {
 
     fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
-        if self.open_socket {
-            ret.args(["-S", &self.control_path().to_string_lossy()]);
+        if let Some(socket) = &self.socket {
+            ret.arg("-S").arg(&socket.path);
         }
         ret.args([
             "-xT",
@@ -218,29 +219,20 @@ impl SshMux {
             "-oForwardAgent=no",
             "-oBatchMode=yes",
             "--",
-            &self.host,
+            self.host,
             command,
         ]);
         ret
     }
 
-    fn control_path(&self) -> PathBuf {
-        self.temp_dir.path().join("sock")
-    }
-
     fn cleanup(&mut self) -> Result<()> {
-        if !self.open_socket {
+        let Some(socket) = self.socket.take() else {
             return Ok(());
-        }
-        self.open_socket = false;
+        };
         Command::new("ssh")
-            .args([
-                "-S",
-                &self.control_path().to_string_lossy(),
-                "-Oexit",
-                "--",
-                &self.host,
-            ])
+            .arg("-S")
+            .arg(&socket.path)
+            .args(["-Oexit", "--", self.host])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -250,7 +242,7 @@ impl SshMux {
     }
 }
 
-impl Drop for SshMux {
+impl Drop for SshMux<'_> {
     fn drop(&mut self) {
         if let Err(e) = self.cleanup() {
             eprintln!("cleanup ssh: {}", e);

@@ -25,6 +25,7 @@ use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
 use tempfile::{self, TempDir};
+mod ssh_cmd;
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -51,17 +52,13 @@ struct Args {
     /// Use the user (rather than session) keyring on the VM
     #[arg(short, long)]
     persist: bool,
-
-    /// Reuse existing socket (host has ControlMaster=auto and ControlPersist)
-    #[arg(short, long)]
-    reuse_socket: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let ssh = SshMux::new(&args.host, args.reuse_socket)
-        .with_context(|| format!("failed to ssh to {}", &args.host))?;
+    let ssh =
+        SshMux::new(&args.host).with_context(|| format!("failed to ssh to {}", &args.host))?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
@@ -167,8 +164,9 @@ struct Socket {
 }
 
 impl<'a> SshMux<'a> {
-    fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
-        let socket = (!reuse_socket)
+    fn new(host: &'a str) -> Result<Self> {
+        let user_socket_defined = ssh_cmd::has_user_socket(host)?;
+        let socket = (!user_socket_defined)
             .then(|| -> Result<Socket> {
                 let mut builder = tempfile::Builder::new();
                 #[cfg(unix)]

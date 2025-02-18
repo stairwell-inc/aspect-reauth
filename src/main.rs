@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let ssh = SshMux::new(&args.host, args.reuse_socket)
-        .with_context(|| format!("failed to ssh to {}", &args.host))?;
+        .context("failed setting up ssh session")?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
@@ -197,12 +197,21 @@ impl<'a> SshMux<'a> {
         // If we're reusing an existing socket but the host has ControlMaster=auto and no currently
         // running master, we do not want the created master to have the restrictive set of options
         // we pass to individual commands, so we still run an initial ssh to open a normal session.
-        cmd.args(["--", ret.host, "true"])
+        let output = cmd
+            .args(["--", ret.host, "true"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .status()
+            .stderr(Stdio::piped())
+            .output()
             .context("failed to start SSH control master")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "ssh {}: {}\n\n{}",
+                ret.host,
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim(),
+            );
+        }
         Ok(ret)
     }
 

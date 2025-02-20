@@ -48,9 +48,13 @@ struct Args {
     #[arg(short, long)]
     force: bool,
 
-    /// Use the user (rather than session) keyring on the VM
+    /// Deprecated, do not use.
     #[arg(short, long)]
-    persist: bool,
+    _persist: bool,
+
+    /// Use the session (rather than user) keyring on the VM
+    #[arg(short, long)]
+    session_keyring: bool,
 
     /// Reuse existing socket (host has ControlMaster=auto and ControlPersist)
     #[arg(short, long)]
@@ -60,8 +64,12 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let ssh = SshMux::new(&args.host, args.reuse_socket)
-        .context("failed setting up ssh session")?;
+    if args._persist {
+        eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
+    }
+
+    let ssh =
+        SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
@@ -125,7 +133,7 @@ fn main() -> Result<()> {
         .context("failed to get aspect credential from keychain")?;
 
     let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
-    let keychain = if args.persist { "@u" } else { "@s" };
+    let keychain = if args.session_keyring { "@s" } else { "@u" };
     let mut child = ssh
         .command("keyctl")
         .args(["padd", "user", &key_name, keychain])

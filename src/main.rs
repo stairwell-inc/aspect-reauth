@@ -189,9 +189,8 @@ impl<'a> SshMux<'a> {
                 Ok(Socket { path, _dir })
             })
             .transpose()?;
-        let ret = SshMux { host, socket };
         let mut cmd = Command::new("ssh");
-        if let Some(socket) = &ret.socket {
+        if let Some(socket) = &socket {
             // cf. scp.c in openssh-portable.
             cmd.arg("-xMTS").arg(&socket.path).args([
                 "-oControlPersist=yes",
@@ -206,7 +205,7 @@ impl<'a> SshMux<'a> {
         // running master, we do not want the created master to have the restrictive set of options
         // we pass to individual commands, so we still run an initial ssh to open a normal session.
         let output = cmd
-            .args(["--", ret.host, "true"])
+            .args(["--", host, "true"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -215,12 +214,12 @@ impl<'a> SshMux<'a> {
         if !output.status.success() {
             anyhow::bail!(
                 "ssh {}: {}\n\n{}",
-                ret.host,
+                host,
                 output.status,
                 String::from_utf8_lossy(&output.stderr).trim(),
             );
         }
-        Ok(ret)
+        Ok(SshMux { host, socket })
     }
 
     fn command(&self, command: &str) -> Command {

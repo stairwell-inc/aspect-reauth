@@ -89,9 +89,8 @@ fn main() -> Result<()> {
             })?;
         let mut stdin = child.stdin.take().context("failed to open stdin")?;
         let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
-        thread::spawn(move || -> Result<()> {
-            stdin.write_all(test_string.as_bytes())?;
-            Ok(())
+        thread::spawn(move || {
+            let _ = stdin.write_all(test_string.as_bytes());
         });
         let output = child
             .wait_with_output()
@@ -143,12 +142,12 @@ fn main() -> Result<()> {
         .spawn()
         .with_context(|| format!("failed to run keyctl on {}", &args.host))?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
-    thread::spawn(move || -> Result<()> {
-        stdin.write_all(credential.as_bytes())?;
-        Ok(())
+    thread::spawn(move || {
+        let _ = stdin.write_all(credential.as_bytes());
     });
-
-    let output = child.wait_with_output()?;
+    let output = child
+        .wait_with_output()
+        .context("failed waiting for keyctl")?;
     if !output.status.success() {
         anyhow::bail!(
             "ssh {} keyctl padd: {}\n\n{}",
@@ -157,6 +156,7 @@ fn main() -> Result<()> {
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
+
     println!(
         "Aspect credentials synced to {}. Have a nice day.",
         args.host

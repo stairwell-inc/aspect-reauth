@@ -49,28 +49,36 @@ struct Args {
     #[arg(short, long)]
     force: bool,
 
-    /// Deprecated, do not use.
-    #[arg(short, long)]
-    _persist: bool,
-
     /// Use the session (rather than user) keyring on the VM
     #[arg(short, long)]
     session_keyring: bool,
 
-    /// Reuse existing socket (host has ControlMaster=auto and ControlPersist)
+    /// Create a temporary socket
     #[arg(short, long)]
-    reuse_socket: bool,
+    create_socket: Option<bool>,
+
+    /// Reuse existing socket (Deprecated: use --create-socket=false instead)
+    #[arg(short, long)]
+    _reuse_socket: bool,
+
+    /// Use persistent keyring (Deprecated: now default)
+    #[arg(short, long)]
+    _persist: bool,
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
+    let mut args = Args::parse();
     if args._persist {
-        eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
+        eprintln!("The -p / --persist flag is deprecated, please do not use it.");
     }
+    if args._reuse_socket {
+        eprintln!("The -r / --reuse-socket flag is deprecated, please do not use it.");
+        args.create_socket = Some(false);
+    }
+    let args = args;
 
-    let ssh =
-        SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
+    let ssh = SshMux::new(&args.host, args.create_socket.unwrap_or(true))
+        .context("failed setting up ssh session")?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun

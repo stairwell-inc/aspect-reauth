@@ -33,8 +33,8 @@ pub struct SshMux<'a> {
 }
 
 impl<'a> SshMux<'a> {
-    pub fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
-        let socket = (!reuse_socket)
+    pub fn new(host: &'a str, create_socket: bool) -> Result<Self> {
+        let socket = create_socket
             .then(|| {
                 TempSocket::new(|builder| {
                     builder.prefix("aspect-reauth-");

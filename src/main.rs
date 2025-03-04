@@ -88,10 +88,11 @@ fn main() -> Result<()> {
         Ok(())
     });
 
-    let (ssh, remote_refresh) = ssh_needs_refresh(&args)?;
+    let ssh_remote_result = ssh_needs_refresh(&args);
     local_handle
         .join()
         .map_err(|e| anyhow::anyhow!("thread panic: {:?}", e))??;
+    let (ssh, remote_refresh) = ssh_remote_result?;
     if !remote_refresh {
         println!("Credential refresh not needed. Have a nice day.");
         return Ok(());

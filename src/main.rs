@@ -69,7 +69,9 @@ fn main() -> Result<()> {
         eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
     }
 
-    if args.force || needs_refresh(Command::new(&args.credential_helper), &args)? {
+    if !args.force && !needs_refresh(Command::new(&args.credential_helper), &args)? {
+        println!("Local credentials are valid");
+    } else {
         let status = Command::new(&args.credential_helper)
             .arg("login")
             .arg(&args.remote)

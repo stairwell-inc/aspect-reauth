@@ -69,6 +69,8 @@ fn main() -> Result<()> {
         eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
     }
 
+    // Refresh the local credential if we need to. We thread this so it can run in parallel with
+    // the SSH connection setup and remote credential refresh check.
     let thread_args = Arc::clone(&args);
     let local_handle = thread::spawn(move || -> Result<()> {
         if !thread_args.force
@@ -94,6 +96,8 @@ fn main() -> Result<()> {
             &args.credential_helper, &args.host
         )
     });
+    // Show the local error first; it's most likely that the credential helper just isn't set up
+    // properly, which is upstream of many of the other things that could go wrong.
     local_handle
         .join()
         .map_err(|e| anyhow::anyhow!("thread panic: {:?}", e))?

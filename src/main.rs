@@ -73,44 +73,7 @@ fn main() -> Result<()> {
         SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
 
     if !args.force {
-        // Check the error output from the credential helper. If it says we need to rerun
-        // "credential-helper login", we do it.
-        let mut child = ssh
-            .command(&args.credential_helper)
-            .arg("get")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "failed to run {} on {}",
-                    &args.credential_helper, &args.host
-                )
-            })?;
-        let mut stdin = child.stdin.take().context("failed to open stdin")?;
-        let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
-        thread::spawn(move || {
-            let _ = stdin.write_all(test_string.as_bytes());
-        });
-        let output = child
-            .wait_with_output()
-            .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
-        if !output.status.success() {
-            let re = Regex::new(&format!(
-                r"(?mis)please\s+run.*{}\s+login",
-                regex::escape(&args.credential_helper)
-            ))
-            .context("failed to compile regex")?;
-            if !re.is_match(&output.stderr) {
-                anyhow::bail!(
-                    "{} get: {}\n\n{}",
-                    args.credential_helper,
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim(),
-                );
-            }
-        } else {
+        if !needs_refresh(ssh.command(&args.credential_helper), &args)? {
             println!("Credential refresh not needed. Have a nice day.");
             return Ok(());
         }
@@ -161,4 +124,44 @@ fn main() -> Result<()> {
         args.host
     );
     Ok(())
+}
+
+fn needs_refresh(mut credential_cmd: Command, args: &Args) -> Result<bool> {
+    let mut child = credential_cmd
+        .arg("get")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| {
+            format!(
+                "failed to run {} on {}",
+                &args.credential_helper, &args.host
+            )
+        })?;
+    let mut stdin = child.stdin.take().context("failed to open stdin")?;
+    let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
+    thread::spawn(move || {
+        let _ = stdin.write_all(test_string.as_bytes());
+    });
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
+    if !output.status.success() {
+        let re = Regex::new(&format!(
+            r"(?mis)please\s+run.*{}\s+login",
+            regex::escape(&args.credential_helper)
+        ))
+        .context("failed to compile regex")?;
+        if !re.is_match(&output.stderr) {
+            anyhow::bail!(
+                "{} get: {}\n\n{}",
+                args.credential_helper,
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim(),
+            );
+        }
+        return Ok(true);
+    }
+    Ok(false)
 }

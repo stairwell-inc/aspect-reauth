@@ -81,14 +81,10 @@ fn main() -> Result<()> {
         }
     }
 
-    let ssh =
-        SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
-
-    if !args.force {
-        if !needs_refresh(ssh.command(&args.credential_helper), &args)? {
-            println!("Credential refresh not needed. Have a nice day.");
-            return Ok(());
-        }
+    let (ssh, remote_refresh) = ssh_needs_refresh(&args)?;
+    if !remote_refresh {
+        println!("Credential refresh not needed. Have a nice day.");
+        return Ok(());
     }
 
     let entry =
@@ -126,6 +122,15 @@ fn main() -> Result<()> {
         args.host
     );
     Ok(())
+}
+
+fn ssh_needs_refresh(args: &Args) -> Result<(SshMux, bool)> {
+    let ssh =
+        SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
+    if !args.force && !needs_refresh(ssh.command(&args.credential_helper), &args)? {
+        return Ok((ssh, false));
+    }
+    return Ok((ssh, true));
 }
 
 fn needs_refresh(mut credential_cmd: Command, args: &Args) -> Result<bool> {

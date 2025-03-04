@@ -151,12 +151,7 @@ fn needs_refresh(mut credential_cmd: Command, args: &Args) -> Result<bool> {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| {
-            format!(
-                "failed to run {} on {}",
-                &args.credential_helper, &args.host
-            )
-        })?;
+        .with_context(|| format!("failed to spawn: {:?}", credential_cmd))?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
     let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
     thread::spawn(move || {

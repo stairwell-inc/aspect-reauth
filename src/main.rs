@@ -69,6 +69,18 @@ fn main() -> Result<()> {
         eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
     }
 
+    if args.force || needs_refresh(Command::new(&args.credential_helper), &args)? {
+        let status = Command::new(&args.credential_helper)
+            .arg("login")
+            .arg(&args.remote)
+            .stdin(Stdio::null())
+            .status()
+            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+        if !status.success() {
+            anyhow::bail!("{} login: {}", args.credential_helper, status);
+        }
+    }
+
     let ssh =
         SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
 
@@ -77,16 +89,6 @@ fn main() -> Result<()> {
             println!("Credential refresh not needed. Have a nice day.");
             return Ok(());
         }
-    }
-
-    let status = Command::new(&args.credential_helper)
-        .arg("login")
-        .arg(&args.remote)
-        .stdin(Stdio::null())
-        .status()
-        .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
-    if !status.success() {
-        anyhow::bail!("{} login: {}", args.credential_helper, status);
     }
 
     let entry =

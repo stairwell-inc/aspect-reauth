@@ -88,10 +88,16 @@ fn main() -> Result<()> {
         Ok(())
     });
 
-    let ssh_remote_result = ssh_needs_refresh(&args);
+    let ssh_remote_result = ssh_needs_refresh(&args).with_context(|| {
+        format!(
+            "failed to run {} on {}",
+            &args.credential_helper, &args.host
+        )
+    });
     local_handle
         .join()
-        .map_err(|e| anyhow::anyhow!("thread panic: {:?}", e))??;
+        .map_err(|e| anyhow::anyhow!("thread panic: {:?}", e))?
+        .with_context(|| format!("failed to run {}", &args.credential_helper))?;
     let (ssh, remote_refresh) = ssh_remote_result?;
     if !remote_refresh {
         println!("Credential refresh not needed. Have a nice day.");

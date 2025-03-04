@@ -18,6 +18,7 @@ mod ssh_mux;
 use std::{
     io::Write,
     process::{Command, Stdio},
+    sync::Arc,
     thread,
 };
 
@@ -63,27 +64,34 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
+    let args = Arc::new(Args::parse());
     if args._persist {
         eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
     }
 
-    if !args.force && !needs_refresh(Command::new(&args.credential_helper), &args)? {
-        println!("Local credentials are valid");
-    } else {
-        let status = Command::new(&args.credential_helper)
+    let thread_args = Arc::clone(&args);
+    let local_handle = thread::spawn(move || -> Result<()> {
+        if !thread_args.force
+            && !needs_refresh(Command::new(&thread_args.credential_helper), &thread_args)?
+        {
+            return Ok(());
+        }
+        let status = Command::new(&thread_args.credential_helper)
             .arg("login")
-            .arg(&args.remote)
+            .arg(&thread_args.remote)
             .stdin(Stdio::null())
             .status()
-            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+            .with_context(|| format!("failed to spawn {}", &thread_args.credential_helper))?;
         if !status.success() {
-            anyhow::bail!("{} login: {}", args.credential_helper, status);
+            anyhow::bail!("{} login: {}", thread_args.credential_helper, status);
         }
-    }
+        Ok(())
+    });
 
     let (ssh, remote_refresh) = ssh_needs_refresh(&args)?;
+    local_handle
+        .join()
+        .map_err(|e| anyhow::anyhow!("thread panic: {:?}", e))??;
     if !remote_refresh {
         println!("Credential refresh not needed. Have a nice day.");
         return Ok(());

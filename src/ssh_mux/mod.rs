@@ -19,6 +19,7 @@ mod temp_socket;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
+use config::infer_create_socket;
 use temp_socket::TempSocket;
 
 /// A batched SSH command multiplexer.
@@ -35,11 +36,8 @@ pub struct SshMux<'a> {
 
 impl<'a> SshMux<'a> {
     pub fn new(host: &'a str, create_socket: Option<bool>) -> Result<Self> {
-        let create_socket = match create_socket {
-            Some(b) => b,
-            None => !config::has_user_socket(host)?,
-        };
         let socket = create_socket
+            .unwrap_or_else(|| infer_create_socket(host))
             .then(|| {
                 TempSocket::new(|builder| {
                     builder.prefix("aspect-reauth-");

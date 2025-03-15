@@ -1,6 +1,6 @@
 [package]
 name = "aspect-reauth"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Stairwell, Inc."]
 edition = "2021"
 description = "Sync fresh Aspect credentials with your dev VM"

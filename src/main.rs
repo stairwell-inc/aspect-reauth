@@ -12,10 +12,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
+
+mod ssh_mux;
+
 use std::{
     io::Write,
-    path::PathBuf,
     process::{Command, Stdio},
     thread,
 };
@@ -24,8 +25,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
-use tempfile::{self, TempDir};
-mod ssh_cmd;
+use ssh_mux::SshMux;
 
 const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
 const DEFAULT_HELPER: &str = "aspect-credential-helper";
@@ -49,16 +49,27 @@ struct Args {
     #[arg(short, long)]
     force: bool,
 
-    /// Use the user (rather than session) keyring on the VM
+    /// Deprecated, do not use.
     #[arg(short, long)]
-    persist: bool,
+    _persist: bool,
+
+    /// Use the session (rather than user) keyring on the VM
+    #[arg(short, long)]
+    session_keyring: bool,
+
+    /// Reuse existing socket (host has ControlMaster=auto and ControlPersist)
+    #[arg(short, long)]
+    reuse_socket: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let ssh =
-        SshMux::new(&args.host).with_context(|| format!("failed to ssh to {}", &args.host))?;
+    if args._persist {
+        eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
+    }
+
+    let ssh = SshMux::new(&args.host).context("failed setting up ssh session")?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
@@ -78,9 +89,8 @@ fn main() -> Result<()> {
             })?;
         let mut stdin = child.stdin.take().context("failed to open stdin")?;
         let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
-        thread::spawn(move || -> Result<()> {
-            stdin.write_all(test_string.as_bytes())?;
-            Ok(())
+        thread::spawn(move || {
+            let _ = stdin.write_all(test_string.as_bytes());
         });
         let output = child
             .wait_with_output()
@@ -122,7 +132,7 @@ fn main() -> Result<()> {
         .context("failed to get aspect credential from keychain")?;
 
     let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
-    let keychain = if args.persist { "@u" } else { "@s" };
+    let keychain = if args.session_keyring { "@s" } else { "@u" };
     let mut child = ssh
         .command("keyctl")
         .args(["padd", "user", &key_name, keychain])
@@ -132,11 +142,9 @@ fn main() -> Result<()> {
         .spawn()
         .with_context(|| format!("failed to run keyctl on {}", &args.host))?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
-    thread::spawn(move || -> Result<()> {
-        stdin.write_all(credential.as_bytes())?;
-        Ok(())
+    thread::spawn(move || {
+        let _ = stdin.write_all(credential.as_bytes());
     });
-
     let output = child.wait_with_output()?;
     if !output.status.success() {
         anyhow::bail!(
@@ -146,104 +154,10 @@ fn main() -> Result<()> {
             String::from_utf8_lossy(&output.stderr).trim(),
         );
     }
+
     println!(
         "Aspect credentials synced to {}. Have a nice day.",
         args.host
     );
     Ok(())
-}
-
-struct SshMux<'a> {
-    host: &'a str,
-    socket: Option<Socket>,
-}
-
-struct Socket {
-    path: PathBuf,
-    _dir: TempDir,
-}
-
-impl<'a> SshMux<'a> {
-    fn new(host: &'a str) -> Result<Self> {
-        let user_socket_defined = ssh_cmd::has_user_socket(host)?;
-        let socket = (!user_socket_defined)
-            .then(|| -> Result<Socket> {
-                let mut builder = tempfile::Builder::new();
-                #[cfg(unix)]
-                {
-                    use std::{fs::Permissions, os::unix::fs::PermissionsExt};
-                    builder.permissions(Permissions::from_mode(0o700));
-                }
-                let _dir = builder.prefix("aspect-reauth-").tempdir()?;
-                let path = _dir.path().join("sock");
-                Ok(Socket { path, _dir })
-            })
-            .transpose()?;
-        let ret = SshMux { host, socket };
-        let mut cmd = Command::new("ssh");
-        if let Some(socket) = &ret.socket {
-            // cf. scp.c in openssh-portable.
-            cmd.arg("-xMTS").arg(&socket.path).args([
-                "-oControlPersist=yes",
-                "-oPermitLocalCommand=no",
-                "-oClearAllForwardings=yes",
-                "-oRemoteCommand=none",
-                "-oForwardAgent=no",
-                "-oBatchMode=yes",
-            ]);
-        }
-        // If we're reusing an existing socket but the host has ControlMaster=auto and no currently
-        // running master, we do not want the created master to have the restrictive set of options
-        // we pass to individual commands, so we still run an initial ssh to open a normal session.
-        cmd.args(["--", ret.host, "true"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to start SSH control master")?;
-        Ok(ret)
-    }
-
-    fn command(&self, command: &str) -> Command {
-        let mut ret = Command::new("ssh");
-        if let Some(socket) = &self.socket {
-            ret.arg("-S").arg(&socket.path);
-        }
-        ret.args([
-            "-xT",
-            "-oPermitLocalCommand=no",
-            "-oClearAllForwardings=yes",
-            "-oRemoteCommand=none",
-            "-oForwardAgent=no",
-            "-oBatchMode=yes",
-            "--",
-            self.host,
-            command,
-        ]);
-        ret
-    }
-
-    fn cleanup(&mut self) -> Result<()> {
-        let Some(socket) = self.socket.take() else {
-            return Ok(());
-        };
-        Command::new("ssh")
-            .arg("-S")
-            .arg(&socket.path)
-            .args(["-Oexit", "--", self.host])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .context("failed to cleanup SSH control master")?;
-        Ok(())
-    }
-}
-
-impl Drop for SshMux<'_> {
-    fn drop(&mut self) {
-        if let Err(e) = self.cleanup() {
-            eprintln!("cleanup ssh: {}", e);
-        }
-    }
 }

@@ -53,9 +53,14 @@ struct Args {
     #[arg(short, long)]
     session_keyring: bool,
 
-    /// Create a temporary socket
-    #[arg(short, long)]
+    /// Create a temporary SSH control socket (if unset, this is automatically inferred)
+    #[arg(short, long, conflicts_with = "no_create_socket", default_missing_value = "true",
+          num_args = 0..=1, require_equals = true)]
     create_socket: Option<bool>,
+
+    /// Do not create a temporary SSH control socket
+    #[arg(short = 'C', long, conflicts_with = "create_socket")]
+    no_create_socket: bool,
 
     /// Reuse existing socket (Deprecated: use --create-socket=false instead)
     #[arg(short, long)]
@@ -68,6 +73,9 @@ struct Args {
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
+    if args.no_create_socket {
+        args.create_socket = Some(false);
+    }
     if args._persist {
         eprintln!("The -p / --persist flag is deprecated, please do not use it.");
     }

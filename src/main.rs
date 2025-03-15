@@ -34,15 +34,15 @@ const DEFAULT_HELPER: &str = "aspect-credential-helper";
 #[command(version, about)]
 struct Args {
     /// SSH hostname to which to sync credential
-    #[arg(default_value_t = String::from("devbox"))]
+    #[arg(default_value = "devbox")]
     host: String,
 
     /// Aspect remote DNS name
-    #[arg(env = "ASPECT_REMOTE", default_value_t = DEFAULT_REMOTE.into(), long)]
+    #[arg(env = "ASPECT_REMOTE", default_value = DEFAULT_REMOTE, long)]
     remote: String,
 
     /// Aspect credential helper executable name
-    #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value_t = DEFAULT_HELPER.into(), long)]
+    #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value = DEFAULT_HELPER, long)]
     credential_helper: String,
 
     /// Force re-login even if the credentials are still valid

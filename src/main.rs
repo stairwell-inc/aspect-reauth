@@ -27,8 +27,8 @@ use keyring::Entry;
 use regex::bytes::Regex;
 use ssh_mux::SshMux;
 
-const DEFAULT_REMOTE: &str = "aw-remote-ext.buildremote.stairwell.io";
-const DEFAULT_HELPER: &str = "aspect-credential-helper";
+const DEFAULT_REMOTE: &str = env!("ASPECT_REMOTE");
+const DEFAULT_HELPER: &str = env!("ASPECT_CREDENTIAL_HELPER");
 
 #[derive(Parser)]
 #[command(version, about)]

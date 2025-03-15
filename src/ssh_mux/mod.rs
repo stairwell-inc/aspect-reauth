@@ -13,11 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod config;
 mod temp_socket;
 
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
+use config::infer_create_socket;
 use temp_socket::TempSocket;
 
 /// A batched SSH command multiplexer.
@@ -33,8 +35,9 @@ pub struct SshMux<'a> {
 }
 
 impl<'a> SshMux<'a> {
-    pub fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
-        let socket = (!reuse_socket)
+    pub fn new(host: &'a str, create_socket: Option<bool>) -> Result<Self> {
+        let socket = create_socket
+            .unwrap_or_else(|| infer_create_socket(host))
             .then(|| {
                 TempSocket::new(|builder| {
                     builder.prefix("aspect-reauth-");

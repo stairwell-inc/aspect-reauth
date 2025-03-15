@@ -34,43 +34,59 @@ const DEFAULT_HELPER: &str = "aspect-credential-helper";
 #[command(version, about)]
 struct Args {
     /// SSH hostname to which to sync credential
-    #[arg(default_value_t = String::from("devbox"))]
+    #[arg(default_value = "devbox")]
     host: String,
 
     /// Aspect remote DNS name
-    #[arg(env = "ASPECT_REMOTE", default_value_t = DEFAULT_REMOTE.into(), long)]
+    #[arg(env = "ASPECT_REMOTE", default_value = DEFAULT_REMOTE, long)]
     remote: String,
 
     /// Aspect credential helper executable name
-    #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value_t = DEFAULT_HELPER.into(), long)]
+    #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value = DEFAULT_HELPER, long)]
     credential_helper: String,
 
     /// Force re-login even if the credentials are still valid
     #[arg(short, long)]
     force: bool,
 
-    /// Deprecated, do not use.
-    #[arg(short, long)]
-    _persist: bool,
-
     /// Use the session (rather than user) keyring on the VM
     #[arg(short, long)]
     session_keyring: bool,
 
-    /// Reuse existing socket (host has ControlMaster=auto and ControlPersist)
+    /// Create a temporary SSH control socket (if unset, this is automatically inferred)
+    #[arg(short, long, conflicts_with = "no_create_socket", default_missing_value = "true",
+          num_args = 0..=1, require_equals = true)]
+    create_socket: Option<bool>,
+
+    /// Do not create a temporary SSH control socket
+    #[arg(short = 'C', long, conflicts_with = "create_socket")]
+    no_create_socket: bool,
+
+    /// Reuse existing socket (Deprecated: use --create-socket=false instead)
     #[arg(short, long)]
-    reuse_socket: bool,
+    _reuse_socket: bool,
+
+    /// Use persistent keyring (Deprecated: now default)
+    #[arg(short, long)]
+    _persist: bool,
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
-    if args._persist {
-        eprintln!("The -p / --persist flag is deprecated and now a no-op, please do not use it.");
+    let mut args = Args::parse();
+    if args.no_create_socket {
+        args.create_socket = Some(false);
     }
+    if args._persist {
+        eprintln!("The -p / --persist flag is deprecated, please do not use it.");
+    }
+    if args._reuse_socket {
+        eprintln!("The -r / --reuse-socket flag is deprecated, please do not use it.");
+        args.create_socket = Some(false);
+    }
+    let args = args;
 
     let ssh =
-        SshMux::new(&args.host, args.reuse_socket).context("failed setting up ssh session")?;
+        SshMux::new(&args.host, args.create_socket).context("failed setting up ssh session")?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun

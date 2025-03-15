@@ -18,7 +18,6 @@ mod ssh_mux;
 use std::{
     io::Write,
     process::{Command, Stdio},
-    str::FromStr,
     thread,
 };
 
@@ -54,16 +53,11 @@ struct Args {
     #[arg(short, long)]
     session_keyring: bool,
 
-    /// Create a temporary ssh control socket [true false infer]
-    #[arg(short, long, conflicts_with = "no_create_socket", default_value = "infer",
-          default_missing_value = "true", num_args = 0..=1, require_equals = true)]
-    create_socket: CreateSocket,
+    /// Create a temporary socket
+    #[arg(short, long)]
+    create_socket: Option<bool>,
 
-    /// Do not create a temporary ssh control socket
-    #[arg(short = 'C', long, conflicts_with = "create_socket")]
-    no_create_socket: bool,
-
-    /// Reuse existing socket (Deprecated: use --no-create-socket instead)
+    /// Reuse existing socket (Deprecated: use --create-socket=false instead)
     #[arg(short, long)]
     _reuse_socket: bool,
 
@@ -72,28 +66,19 @@ struct Args {
     _persist: bool,
 }
 
-#[derive(Clone, Copy)]
-enum CreateSocket {
-    Infer,
-    Value(bool),
-}
-
 fn main() -> Result<()> {
     let mut args = Args::parse();
-    if args.no_create_socket {
-        args.create_socket = CreateSocket::Value(false);
-    }
     if args._persist {
         eprintln!("The -p / --persist flag is deprecated, please do not use it.");
     }
     if args._reuse_socket {
         eprintln!("The -r / --reuse-socket flag is deprecated, please do not use it.");
-        args.create_socket = CreateSocket::Value(false);
+        args.create_socket = Some(false);
     }
     let args = args;
 
-    let ssh = SshMux::new(&args.host, args.create_socket.into())
-        .context("failed setting up ssh session")?;
+    let ssh =
+        SshMux::new(&args.host, args.create_socket).context("failed setting up ssh session")?;
 
     if !args.force {
         // Check the error output from the credential helper. If it says we need to rerun
@@ -184,26 +169,4 @@ fn main() -> Result<()> {
         args.host
     );
     Ok(())
-}
-
-impl FromStr for CreateSocket {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self> {
-        if s == "infer" {
-            return Ok(CreateSocket::Infer);
-        }
-        if let Ok(b) = s.parse() {
-            return Ok(CreateSocket::Value(b));
-        }
-        anyhow::bail!("provided string was not `true`, `false`, or `infer`");
-    }
-}
-
-impl From<CreateSocket> for Option<bool> {
-    fn from(v: CreateSocket) -> Self {
-        match v {
-            CreateSocket::Infer => None,
-            CreateSocket::Value(b) => Some(b),
-        }
-    }
 }

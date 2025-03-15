@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod config;
 mod temp_socket;
 
 use std::process::{Command, Stdio};
@@ -33,8 +34,12 @@ pub struct SshMux<'a> {
 }
 
 impl<'a> SshMux<'a> {
-    pub fn new(host: &'a str, reuse_socket: bool) -> Result<Self> {
-        let socket = (!reuse_socket)
+    pub fn new(host: &'a str, create_socket: Option<bool>) -> Result<Self> {
+        let create_socket = match create_socket {
+            Some(b) => b,
+            None => !config::has_user_socket(host)?,
+        };
+        let socket = create_socket
             .then(|| {
                 TempSocket::new(|builder| {
                     builder.prefix("aspect-reauth-");

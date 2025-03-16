@@ -1,16 +1,21 @@
-use std::env;
+use std::env::{self, VarError};
 
-fn main() {
-    let default_remote = env::var("ASPECT_REMOTE")
-        .unwrap_or_else(|_| "aw-remote-ext.buildremote.stairwell.io".into());
-    let default_helper =
-        env::var("ASPECT_CREDENTIAL_HELPER").unwrap_or_else(|_| "aspect-credential-helper".into());
+fn main() -> Result<(), VarError> {
+    build_env_var("ASPECT_REMOTE", "aw-remote-ext.buildremote.stairwell.io")?;
+    build_env_var("ASPECT_CREDENTIAL_HELPER", "aspect-credential-helper")?;
+    Ok(())
+}
 
-    println!("cargo::rerun-if-env-changed=ASPECT_REMOTE");
-    println!("cargo::rerun-if-env-changed=ASPECT_CREDENTIAL_HELPER");
-    println!("cargo::rustc-env=ASPECT_REMOTE={}", default_remote);
+/// Exposes the named environment variable transparently as a build environment variable, using the
+/// passed default if the variable is unset.
+fn build_env_var(name: &str, default: &str) -> Result<(), VarError> {
+    let val = match env::var(name) {
+        r@(Ok(_) | Err(VarError::NotUnicode(_))) => r?,
+        Err(VarError::NotPresent) => default.into(),
+    };
     println!(
-        "cargo::rustc-env=ASPECT_CREDENTIAL_HELPER={}",
-        default_helper
+        "cargo::rerun-if-env-changed={name}\n\
+         cargo::rustc-env={name}={val}"
     );
+    Ok(())
 }

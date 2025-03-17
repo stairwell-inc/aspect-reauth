@@ -30,7 +30,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
     - uses: stairwell-inc/checkout@v4
     - run: rustup target add ${{ matrix.target }} && rustup update
-    - run: cargo build --release --target ${{ matrix.target }}
+    - run: cargo build --locked --release --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-${{ matrix.target }}

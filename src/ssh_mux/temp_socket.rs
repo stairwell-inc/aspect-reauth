@@ -38,17 +38,13 @@ impl TempSocket {
             use std::{fs::Permissions, os::unix::fs::PermissionsExt};
             builder.permissions(Permissions::from_mode(0o700));
         }
-        Ok(builder.prefix(prefix).tempdir()?.into())
-    }
-}
-
-impl From<TempDir> for TempSocket {
-    fn from(dir: TempDir) -> Self {
+        let dir = builder.prefix(prefix).tempdir()?;
         let mut path = dir.into_path();
+        // --- no early-return allowed from here ---
         path.push("sock");
-        TempSocket {
+        Ok(TempSocket {
             path: path.into_boxed_path(),
-        }
+        })
     }
 }
 

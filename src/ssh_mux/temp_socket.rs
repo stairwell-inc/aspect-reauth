@@ -16,7 +16,6 @@
 use std::{ffi::OsStr, fs::remove_dir_all, path::Path};
 
 use anyhow::Result;
-use tempfile::TempDir;
 
 /// Exposes and controls a path suitable for use as a temporary socket. The path is made available
 /// by `AsRef<OsStr>` on `&TempSocket`, so that a reference to this may be passed directly to

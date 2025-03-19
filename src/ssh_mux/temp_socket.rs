@@ -31,15 +31,14 @@ pub struct TempSocket {
 }
 
 impl TempSocket {
-    pub fn new(opts: impl FnOnce(&mut tempfile::Builder)) -> Result<Self> {
+    pub fn new(prefix: &str) -> Result<Self> {
         let mut builder = tempfile::Builder::new();
         #[cfg(unix)]
         {
             use std::{fs::Permissions, os::unix::fs::PermissionsExt};
             builder.permissions(Permissions::from_mode(0o700));
         }
-        opts(&mut builder);
-        Ok(builder.tempdir()?.into())
+        Ok(builder.prefix(prefix).tempdir()?.into())
     }
 }
 

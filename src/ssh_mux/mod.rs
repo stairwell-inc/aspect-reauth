@@ -38,11 +38,7 @@ impl<'a> SshMux<'a> {
     pub fn new(host: &'a str, create_socket: Option<bool>) -> Result<Self> {
         let socket = create_socket
             .unwrap_or_else(|| infer_create_socket(host))
-            .then(|| {
-                TempSocket::new(|builder| {
-                    builder.prefix("aspect-reauth-");
-                })
-            })
+            .then(|| TempSocket::new("aspect-reauth-"))
             .transpose()?;
         let mut cmd = Command::new("ssh");
         if let Some(socket) = &socket {

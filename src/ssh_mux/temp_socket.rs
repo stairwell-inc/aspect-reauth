@@ -16,7 +16,6 @@
 use std::{ffi::OsStr, fs::remove_dir_all, path::Path};
 
 use anyhow::Result;
-use tempfile::TempDir;
 
 /// Exposes and controls a path suitable for use as a temporary socket. The path is made available
 /// by `AsRef<OsStr>` on `&TempSocket`, so that a reference to this may be passed directly to
@@ -31,25 +30,20 @@ pub struct TempSocket {
 }
 
 impl TempSocket {
-    pub fn new(opts: impl FnOnce(&mut tempfile::Builder)) -> Result<Self> {
+    pub fn new(prefix: &str) -> Result<Self> {
         let mut builder = tempfile::Builder::new();
         #[cfg(unix)]
         {
             use std::{fs::Permissions, os::unix::fs::PermissionsExt};
             builder.permissions(Permissions::from_mode(0o700));
         }
-        opts(&mut builder);
-        Ok(builder.tempdir()?.into())
-    }
-}
-
-impl From<TempDir> for TempSocket {
-    fn from(dir: TempDir) -> Self {
+        let dir = builder.prefix(prefix).tempdir()?;
         let mut path = dir.into_path();
+        // --- no early-return allowed from here ---
         path.push("sock");
-        TempSocket {
+        Ok(TempSocket {
             path: path.into_boxed_path(),
-        }
+        })
     }
 }
 

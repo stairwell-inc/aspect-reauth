@@ -61,14 +61,6 @@ struct Args {
     /// Do not create a temporary SSH control socket
     #[arg(short = 'C', long, conflicts_with = "create_socket")]
     no_create_socket: bool,
-
-    /// Reuse existing socket (Deprecated: use --create-socket=false instead)
-    #[arg(short, long)]
-    _reuse_socket: bool,
-
-    /// Use persistent keyring (Deprecated: now default)
-    #[arg(short, long)]
-    _persist: bool,
 }
 
 fn main() -> Result<()> {
@@ -76,60 +68,16 @@ fn main() -> Result<()> {
     if args.no_create_socket {
         args.create_socket = Some(false);
     }
-    if args._persist {
-        eprintln!("The -p / --persist flag is deprecated, please do not use it.");
-    }
-    if args._reuse_socket {
-        eprintln!("The -r / --reuse-socket flag is deprecated, please do not use it.");
-        args.create_socket = Some(false);
-    }
     let args = args;
 
     let ssh =
         SshMux::new(&args.host, args.create_socket).context("failed setting up ssh session")?;
 
-    if !args.force {
-        // Check the error output from the credential helper. If it says we need to rerun
-        // "credential-helper login", we do it.
-        let mut child = ssh
-            .command(&args.credential_helper)
-            .arg("get")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "failed to run {} on {}",
-                    &args.credential_helper, &args.host
-                )
-            })?;
-        let mut stdin = child.stdin.take().context("failed to open stdin")?;
-        let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
-        thread::spawn(move || {
-            let _ = stdin.write_all(test_string.as_bytes());
-        });
-        let output = child
-            .wait_with_output()
-            .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
-        if !output.status.success() {
-            let re = Regex::new(&format!(
-                r"(?mis)please\s+run.*{}\s+login",
-                regex::escape(&args.credential_helper)
-            ))
-            .context("failed to compile regex")?;
-            if !re.is_match(&output.stderr) {
-                anyhow::bail!(
-                    "{} get: {}\n\n{}",
-                    args.credential_helper,
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim(),
-                );
-            }
-        } else {
-            println!("Credential refresh not needed. Have a nice day.");
-            return Ok(());
-        }
+    if !args.force && !needs_refresh(&args, &ssh)? {
+        // If we have valid credentials and didn't ask to unconditionally refresh them, then we're
+        // done.
+        println!("Credential refresh not needed. Have a nice day.");
+        return Ok(());
     }
 
     let status = Command::new(&args.credential_helper)
@@ -177,4 +125,45 @@ fn main() -> Result<()> {
         args.host
     );
     Ok(())
+}
+
+fn needs_refresh(args: &Args, ssh: &SshMux) -> Result<bool> {
+    let mut child = ssh
+        .command(&args.credential_helper)
+        .arg("get")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| {
+            format!(
+                "failed to run {} on {}",
+                &args.credential_helper, &args.host
+            )
+        })?;
+    let mut stdin = child.stdin.take().context("failed to open stdin")?;
+    let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
+    thread::spawn(move || {
+        let _ = stdin.write_all(test_string.as_bytes());
+    });
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
+    if !output.status.success() {
+        let re = Regex::new(&format!(
+            r"(?mis)please\s+run.*{}\s+login",
+            regex::escape(&args.credential_helper)
+        ))
+        .context("failed to compile regex")?;
+        if !re.is_match(&output.stderr) {
+            anyhow::bail!(
+                "{} get: {}\n\n{}",
+                args.credential_helper,
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim(),
+            );
+        }
+        return Ok(true);
+    }
+    Ok(false)
 }

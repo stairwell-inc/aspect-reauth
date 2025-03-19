@@ -61,26 +61,11 @@ struct Args {
     /// Do not create a temporary SSH control socket
     #[arg(short = 'C', long, conflicts_with = "create_socket")]
     no_create_socket: bool,
-
-    /// Reuse existing socket (Deprecated: use --create-socket=false instead)
-    #[arg(short, long)]
-    _reuse_socket: bool,
-
-    /// Use persistent keyring (Deprecated: now default)
-    #[arg(short, long)]
-    _persist: bool,
 }
 
 fn main() -> Result<()> {
     let mut args = Args::parse();
     if args.no_create_socket {
-        args.create_socket = Some(false);
-    }
-    if args._persist {
-        eprintln!("The -p / --persist flag is deprecated, please do not use it.");
-    }
-    if args._reuse_socket {
-        eprintln!("The -r / --reuse-socket flag is deprecated, please do not use it.");
         args.create_socket = Some(false);
     }
     let args = args;

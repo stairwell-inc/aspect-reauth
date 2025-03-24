@@ -16,6 +16,7 @@
 mod ssh_mux;
 
 use std::{
+    ffi::OsStr,
     io::Write,
     process::{Command, Stdio},
     thread,
@@ -61,6 +62,10 @@ struct Args {
     /// Do not create a temporary SSH control socket
     #[arg(short = 'C', long, conflicts_with = "create_socket")]
     no_create_socket: bool,
+
+    /// Call SSH with an additional argument (takes multiple: --ssh-arg='-p 23' --ssh-arg='-A')
+    #[arg(short = 'A', long = "ssh-arg", alias = "ssh_arg", action = clap::ArgAction::Append)]
+    ssh_args: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -70,8 +75,8 @@ fn main() -> Result<()> {
     }
     let args = args;
 
-    let ssh =
-        SshMux::new(&args.host, args.create_socket).context("failed setting up ssh session")?;
+    let ssh = SshMux::new(&args.host, &args.ssh_args, args.create_socket)
+        .context("failed setting up ssh session")?;
 
     if !args.force && !needs_refresh(&args, &ssh)? {
         // If we have valid credentials and didn't ask to unconditionally refresh them, then we're
@@ -127,7 +132,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn needs_refresh(args: &Args, ssh: &SshMux) -> Result<bool> {
+fn needs_refresh<T: AsRef<OsStr>>(args: &Args, ssh: &SshMux<T>) -> Result<bool> {
     let mut child = ssh
         .command(&args.credential_helper)
         .arg("get")

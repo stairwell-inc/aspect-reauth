@@ -16,7 +16,10 @@
 mod config;
 mod temp_socket;
 
-use std::process::{Command, Stdio};
+use std::{
+    ffi::OsStr,
+    process::{Command, Stdio},
+};
 
 use anyhow::{Context, Result};
 use config::infer_create_socket;
@@ -29,18 +32,20 @@ use temp_socket::TempSocket;
 /// 2. Optionally, it stands up a temporary SSH master and control socket, allowing the same socket
 ///    to be reused across SSH commands so that subsequent commands do not incur connection setup
 ///    overhead.
-pub struct SshMux<'a> {
+pub struct SshMux<'a, T: AsRef<OsStr>> {
     host: &'a str,
+    ssh_args: &'a [T],
     socket: Option<TempSocket>,
 }
 
-impl<'a> SshMux<'a> {
-    pub fn new(host: &'a str, create_socket: Option<bool>) -> Result<Self> {
+impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
+    pub fn new(host: &'a str, ssh_args: &'a [T], create_socket: Option<bool>) -> Result<Self> {
         let socket = create_socket
             .unwrap_or_else(|| infer_create_socket(host))
             .then(|| TempSocket::new("aspect-reauth-"))
             .transpose()?;
         let mut cmd = Command::new("ssh");
+        cmd.args(ssh_args);
         if let Some(socket) = &socket {
             // cf. scp.c in openssh-portable.
             cmd.arg("-xMTS").arg(socket).args([
@@ -70,11 +75,16 @@ impl<'a> SshMux<'a> {
                 String::from_utf8_lossy(&output.stderr).trim(),
             );
         }
-        Ok(SshMux { host, socket })
+        Ok(SshMux {
+            host,
+            ssh_args,
+            socket,
+        })
     }
 
     pub fn command(&self, command: &str) -> Command {
         let mut ret = Command::new("ssh");
+        ret.args(self.ssh_args);
         if let Some(socket) = &self.socket {
             ret.arg("-S").arg(socket);
         }
@@ -97,6 +107,7 @@ impl<'a> SshMux<'a> {
             return Ok(());
         };
         Command::new("ssh")
+            .args(self.ssh_args)
             .arg("-S")
             .arg(&socket)
             .args(["-Oexit", "--", self.host])
@@ -109,7 +120,7 @@ impl<'a> SshMux<'a> {
     }
 }
 
-impl Drop for SshMux<'_> {
+impl<T: AsRef<OsStr>> Drop for SshMux<'_, T> {
     fn drop(&mut self) {
         if let Err(e) = self.cleanup() {
             eprintln!("cleanup ssh: {}", e);

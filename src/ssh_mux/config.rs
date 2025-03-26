@@ -15,17 +15,15 @@
 
 use std::process::Command;
 
-/// Returns true if it looks like we should create our own socket to manage SSH connection
-/// multiplexing, false otherwise. Specifically this returns true if the host configuration does
-/// not include `ControlMaster auto`; if it does, then we assume we can just use (or create) the
-/// pre-existing socket.
+/// Guess if we should create create our own socket or attempt to reuse an existing one.
 ///
-/// This is not a perfect heuristic; e.g. if the host has too short a `ControlPersist` value, then
-/// we might wind up starting up multiple connections regardless.
+/// This function checks the output of `ssh -G` for the given host and returns false if the user has
+/// set a value for the `ControlPersist` directive, which we assume means there's an existing socket
+/// we can reuse.
 ///
-/// If this function encounters an error, it just returns false. The assumption is that whatever
-/// went wrong reading the config will also go wrong connecting to the host, and that there's no
-/// reason to stand up our own managed socket for a connection we expect to fail anyway.
+/// We don't bother checking the timeout value or errors here, since we will fall back to creating
+/// a new socket if the control socket has gone away, and any errors will be reported later when we
+/// attempt to connect.
 pub fn infer_create_socket(host: &str) -> bool {
     let Ok(output) = Command::new("ssh").args(["-G", "--", host]).output() else {
         return false;

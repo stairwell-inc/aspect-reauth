@@ -15,13 +15,15 @@
 
 use std::process::Command;
 
+/// Guess if we should create create our own socket or attempt to reuse an existing one.
+///
+/// This function checks the output of `ssh -G` for the given host and returns false if the user
+/// has set `ControlMaster auto`, which we assume means there's an existing socket we can reuse.
+///
+/// We don't bother checking the timeout value or errors here, since we will fall back to creating
+/// a new socket if the control socket has gone away, and any errors will be reported later when we
+/// attempt to connect.
 pub fn infer_create_socket(host: &str) -> bool {
-    // Get the output of `ssh -G <host>` this will have a standard
-    // lowercase represesntation of:
-    //
-    // <key> <value>
-    //
-    // so a basic match should be enough.
     let Ok(output) = Command::new("ssh").args(["-G", "--", host]).output() else {
         return false;
     };

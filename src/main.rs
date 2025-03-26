@@ -55,8 +55,14 @@ struct Args {
     session_keyring: bool,
 
     /// Create a temporary SSH control socket (if unset, this is automatically inferred)
-    #[arg(short, long, conflicts_with = "no_create_socket", default_missing_value = "true",
-          num_args = 0..=1, require_equals = true)]
+    #[arg(
+        short,
+        long,
+        conflicts_with = "no_create_socket",
+        default_missing_value = "true",
+        num_args = 0..=1,
+        require_equals = true
+    )]
     create_socket: Option<bool>,
 
     /// Do not create a temporary SSH control socket

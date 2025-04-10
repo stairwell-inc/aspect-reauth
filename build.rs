@@ -25,7 +25,7 @@ fn main() -> Result<(), VarError> {
 /// passed default if the variable is unset.
 fn build_env_var(name: &str, default: &str) -> Result<(), VarError> {
     let val = match env::var(name) {
-        r@(Ok(_) | Err(VarError::NotUnicode(_))) => r?,
+        r @ (Ok(_) | Err(VarError::NotUnicode(_))) => r?,
         Err(VarError::NotPresent) => default.into(),
     };
     println!(

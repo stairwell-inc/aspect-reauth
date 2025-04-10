@@ -36,3 +36,10 @@ jobs:
         name: aspect-reauth-${{ matrix.target }}
         path: target/${{ matrix.target}}/release/aspect-reauth${{ matrix.suffix }}
         retention-days: ${{ github.event_name == 'pull_request' && 7 || '' }}
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+    - uses: stairwell-inc/checkout@v4
+    - run: rustup update
+    - run: cargo fmt -- --check

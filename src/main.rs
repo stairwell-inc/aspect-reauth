@@ -189,9 +189,11 @@ impl FromStr for CreateSocket {
             "infer" => Ok(CreateSocket::Infer),
             // Regrettably there is not any easy way to get at clap's BoolishValueParser from here,
             // so we inline its current implementation instead.
-            "y" | "yes" | "t" | "true" | "on" | "1" => Ok(CreateSocket::Specify(true)),
-            "n" | "no" | "f" | "false" | "off" | "0" => Ok(CreateSocket::Specify(false)),
-            _ => Err(anyhow::anyhow!("unknown value {s}")),
+            _ => Ok(CreateSocket::Specify(match s {
+                "y" | "yes" | "t" | "true" | "on" | "1" => true,
+                "n" | "no" | "f" | "false" | "off" | "0" => false,
+                _ => anyhow::bail!("unknown value {s}"),
+            })),
         }
     }
 }

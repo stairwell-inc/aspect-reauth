@@ -19,6 +19,7 @@ use std::{
     ffi::OsStr,
     io::Write,
     process::{Command, Stdio},
+    str::FromStr,
     thread,
 };
 
@@ -26,7 +27,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
-use ssh_mux::SshMux;
+use ssh_mux::{CreateSocket, SshMux};
 
 const DEFAULT_REMOTE: &str = env!("ASPECT_REMOTE");
 const DEFAULT_HELPER: &str = env!("ASPECT_CREDENTIAL_HELPER");
@@ -54,16 +55,17 @@ struct Args {
     #[arg(short, long)]
     session_keyring: bool,
 
-    /// Create a temporary SSH control socket (if unset, this is automatically inferred)
+    /// Create a temporary SSH control socket [values: true, false, infer]
     #[arg(
         short,
         long,
         conflicts_with = "no_create_socket",
+        default_value = "infer",
         default_missing_value = "true",
         num_args = 0..=1,
         require_equals = true
     )]
-    create_socket: Option<bool>,
+    create_socket: CreateSocket,
 
     /// Do not create a temporary SSH control socket
     #[arg(short = 'C', long, conflicts_with = "create_socket")]
@@ -77,7 +79,7 @@ struct Args {
 fn main() -> Result<()> {
     let mut args = Args::parse();
     if args.no_create_socket {
-        args.create_socket = Some(false);
+        args.create_socket = CreateSocket::Specify(false);
     }
     let args = args;
 
@@ -177,4 +179,21 @@ fn needs_refresh<T: AsRef<OsStr>>(args: &Args, ssh: &SshMux<T>) -> Result<bool> 
         return Ok(true);
     }
     Ok(false)
+}
+
+impl FromStr for CreateSocket {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "infer" => Ok(CreateSocket::Infer),
+            // Regrettably there is not any easy way to get at clap's BoolishValueParser from here,
+            // so we inline its current implementation instead.
+            _ => Ok(CreateSocket::Specify(match s {
+                "y" | "yes" | "t" | "true" | "on" | "1" => true,
+                "n" | "no" | "f" | "false" | "off" | "0" => false,
+                _ => anyhow::bail!("unknown value {s}"),
+            })),
+        }
+    }
 }

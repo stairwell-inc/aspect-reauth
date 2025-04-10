@@ -25,6 +25,12 @@ use anyhow::{Context, Result};
 use config::infer_create_socket;
 use temp_socket::TempSocket;
 
+#[derive(Clone, Copy)]
+pub enum CreateSocket {
+    Infer,
+    Specify(bool),
+}
+
 /// A batched SSH command multiplexer.
 ///
 /// This class does two things:
@@ -39,8 +45,9 @@ pub struct SshMux<'a, T: AsRef<OsStr>> {
 }
 
 impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
-    pub fn new(host: &'a str, ssh_args: &'a [T], create_socket: Option<bool>) -> Result<Self> {
+    pub fn new(host: &'a str, ssh_args: &'a [T], create_socket: CreateSocket) -> Result<Self> {
         let socket = create_socket
+            .into_option_bool()
             .unwrap_or_else(|| infer_create_socket(host))
             .then(|| TempSocket::new("aspect-reauth-"))
             .transpose()?;
@@ -124,6 +131,15 @@ impl<T: AsRef<OsStr>> Drop for SshMux<'_, T> {
     fn drop(&mut self) {
         if let Err(e) = self.cleanup() {
             eprintln!("cleanup ssh: {}", e);
+        }
+    }
+}
+
+impl CreateSocket {
+    fn into_option_bool(&self) -> Option<bool> {
+        match *self {
+            CreateSocket::Infer => None,
+            CreateSocket::Specify(b) => Some(b),
         }
     }
 }

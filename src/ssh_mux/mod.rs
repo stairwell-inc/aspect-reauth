@@ -136,8 +136,8 @@ impl<T: AsRef<OsStr>> Drop for SshMux<'_, T> {
 }
 
 impl CreateSocket {
-    fn into_option_bool(&self) -> Option<bool> {
-        match *self {
+    fn into_option_bool(self) -> Option<bool> {
+        match self {
             CreateSocket::Infer => None,
             CreateSocket::Specify(b) => Some(b),
         }

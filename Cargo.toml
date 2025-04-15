@@ -1,11 +1,11 @@
 [package]
 name = "aspect-reauth"
-homepage = "https://github.com/stairwell-inc/aspect-reauth"
 version = "0.7.0"
 authors = ["Stairwell, Inc."]
 edition = "2021"
-description = "Sync fresh Aspect credentials with your dev VM"
+homepage = "https://github.com/stairwell-inc/aspect-reauth"
 license = "Apache-2.0"
+description = "Sync fresh Aspect credentials with your dev VM"
 
 exclude = [
     ".github/**",
@@ -14,7 +14,10 @@ exclude = [
 
 [dependencies]
 anyhow = "1.0.95"
-clap = { version = "4.5.29", features = ["env", "derive"] }
-keyring = { version = "3.6.1", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
+clap = { version = "4.5.29", features = ["derive", "env"] }
 regex = "1.11.1"
 tempfile = "3.16.0"
+
+[dependencies.keyring]
+version = "3.6.1"
+features = ["apple-native", "linux-native-sync-persistent", "windows-native"]

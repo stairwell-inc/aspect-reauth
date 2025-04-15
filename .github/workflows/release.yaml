@@ -1,5 +1,8 @@
 name: Release
 
+env:
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
 on:
   push:
     tags: ["v*"]
@@ -8,6 +11,14 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/build.yaml
+
+  publish:
+    name: Publish to Crates Registry
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: stairwell-inc/checkout@v4
+    - run: cargo publish --no-verify --locked
 
   macos-release:
     name: macOS Release
@@ -69,3 +80,20 @@ jobs:
       with:
         name: aspect-reauth-pkg-darwin
         path: aspect-reauth.pkg
+        if-no-files-found: error
+
+  github-release:
+    needs: [build, macos-release]
+    runs-on: ubuntu-latest
+    steps:
+    - run: stairwell-inc/download-artifact@v4
+    - run: |
+      mkdir gh-release
+      ln aspect-reauth-darwin/aspect-reauth-release gh-release/aspect-reauth-darwin
+      ln aspect-reauth-x86_64-unknown-linux-gnu/aspect-reauth gh-release/aspect-reauth-linux-amd64
+      ln aspect-reauth-x86_64-pc-windows-msvc gh-release/aspect-reauth-windows-amd64
+    - run: stairwell-inc/action-gh-release@v2
+      with:
+        draft: true
+        files: gh-release/*
+        generate_release_notes: true

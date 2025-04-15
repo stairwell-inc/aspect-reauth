@@ -51,3 +51,4 @@ jobs:
         name: aspect-reauth-${{ matrix.target }}
         path: target/${{ matrix.target}}/release/aspect-reauth${{ matrix.suffix }}
         retention-days: ${{ github.event_name == 'pull_request' && 7 || '' }}
+    - run: cargo publish --locked --dry-run --target ${{ matrix.target }}

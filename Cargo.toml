@@ -1,7 +1,7 @@
 [package]
 name = "aspect-reauth"
 version = "0.7.0"
-authors = ["Stairwell, Inc."]
+authors = ["Stairwell, Inc. <eng@stairwell.com>"]
 edition = "2021"
 homepage = "https://github.com/stairwell-inc/aspect-reauth"
 license = "Apache-2.0"

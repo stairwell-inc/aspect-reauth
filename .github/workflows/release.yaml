@@ -7,6 +7,7 @@ env:
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -21,7 +22,8 @@ jobs:
     - uses: stairwell-inc/download-artifact@v4
       pattern: aspect-reauth-*-apple-darwin
     - run: |
-      lipo -create -output aspect-reauth-universal aspect-reauth-{x86_64,aarch64}-apple-darwin
+      lipo -create -output aspect-reauth-universal aspect-reauth-{x86_64,aarch64}-apple-darwin/aspect-reauth
+    - run: rm -rf aspect-reauth-*-apple-darwin
     - run: |
       set -e
       cp aspect-reauth-universal .tmp.$$
@@ -35,10 +37,14 @@ jobs:
       cp aspect-reauth-signed .tmp.$$
       trap "rm -f .tmp.$$" EXIT
       xcrun stapler staple .tmp.$$
-      mv .tmp.$$ aspect-reauth
+      mv .tmp.$$ aspect-reauth-release
       spctl --assess -vv --type execute aspect-reauth
-    - run: rm -f aspect-reauth-*-apple-darwin
     - uses: stairwell-inc/upload-artifact@v4
       with:
-        name: macos-release
-        path: aspect-reauth*
+        name: aspect-reauth-darwin-steps
+        path: aspect-reauth-*
+    - uses: stairwell-inc/upload-artifact@v4
+      with:
+        name: aspect-reauth-darwin
+        path: aspect-reauth-release
+        if-no-files-found: error

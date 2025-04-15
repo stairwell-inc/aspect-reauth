@@ -1,10 +1,16 @@
 [package]
 name = "aspect-reauth"
-version = "0.6.0"
+homepage = "https://github.com/stairwell-inc/aspect-reauth"
+version = "0.7.0"
 authors = ["Stairwell, Inc."]
 edition = "2021"
 description = "Sync fresh Aspect credentials with your dev VM"
 license = "Apache-2.0"
+
+exclude = [
+    ".github/**",
+    ".gitignore",
+]
 
 [dependencies]
 anyhow = "1.0.95"

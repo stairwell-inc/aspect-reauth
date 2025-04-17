@@ -29,6 +29,19 @@ jobs:
     - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
       if: matrix.os == 'ubuntu-latest'
     - uses: stairwell-inc/checkout@v4
+    - uses: stairwell-inc/cache@v4
+      with:
+        path: ~/.cargo
+        key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          cargo-${{ matrix.target }}-
+    - uses: stairwell-inc/cache@v4
+      with:
+        path: target
+        key: target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-${{ github.ref }}
+        restore-keys: |
+          target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
+          target-${{ matrix.target }}-
     - run: rustup target add ${{ matrix.target }} && rustup update
     - run: cargo build --locked --release --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4

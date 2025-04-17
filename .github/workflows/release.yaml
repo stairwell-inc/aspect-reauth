@@ -1,9 +1,5 @@
 name: Release
 
-env:
-  NOTARY_PASS: ${{ secrets.NOTARY_PASS }}
-  DEV_ACCOUNT: ${{ secrets.DEV_ACCOUNT }}
-
 on:
   push:
     tags: ["v*"]
@@ -24,13 +20,18 @@ jobs:
     - run: |
         lipo -create -output aspect-reauth-universal aspect-reauth-{x86_64,aarch64}-apple-darwin/aspect-reauth
     - run: rm -rf aspect-reauth-*-apple-darwin
+
     - run: |
         set -e
         cp aspect-reauth-universal .tmp.$$
         trap "rm -f .tmp.$$" EXIT
         codesign -s 'Developer ID Application: Stairwell, Inc. (677UQVFGY8)' -f --timestamp -o runtime .tmp.$$
         mv .tmp.$$ aspect-reauth-signed
-    - run: |
+
+    - env:
+        NOTARY_PASS: ${{ secrets.NOTARY_PASS }}
+        DEV_ACCOUNT: ${{ secrets.DEV_ACCOUNT }}
+      run: |
         set -e
         xcrun notarytool store-credentials --apple-id "$DEV_ACCOUNT" --team-id 677UQVFGY8 --password "$NOTARY_PASS" notary-aspect-reauth
         xcrun notarytool submit aspect-reauth-signed --keychain-profile notary-aspect-reauth --wait
@@ -39,6 +40,7 @@ jobs:
         xcrun stapler staple .tmp.$$
         mv .tmp.$$ aspect-reauth-release
         spctl --assess -vv --type execute aspect-reauth
+
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-darwin-steps

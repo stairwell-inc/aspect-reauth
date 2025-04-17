@@ -16,7 +16,7 @@ jobs:
   macos-release:
     name: macOS Release
     needs: build
-    runs-on: [self-hosted, macos]
+    runs-on: [self-hosted, macOS]
     environment: macos
     steps:
     - uses: stairwell-inc/download-artifact@v4

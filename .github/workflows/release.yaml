@@ -35,19 +35,11 @@ jobs:
       run: |
         set -e
         xcrun notarytool store-credentials --apple-id "$DEV_ACCOUNT" --team-id 677UQVFGY8 --password "$NOTARY_PASS" notary-aspect-reauth
-        xcrun notarytool submit aspect-reauth-signed --keychain-profile notary-aspect-reauth --wait
-        cp aspect-reauth-signed .tmp.$$
-        trap "rm -f .tmp.$$" EXIT
-        xcrun stapler staple .tmp.$$
-        mv .tmp.$$ aspect-reauth-release
-        spctl --assess -vv --type execute aspect-reauth
+        zip -qr aspect-reauth-notary-bundle.zip aspect-reauth-signed
+        xcrun notarytool submit aspect-reauth-notary-bundle.zip --keychain-profile notary-aspect-reauth --wait
 
     - uses: stairwell-inc/upload-artifact@v4
       with:
-        name: aspect-reauth-darwin-steps
-        path: aspect-reauth-*
-    - uses: stairwell-inc/upload-artifact@v4
-      with:
         name: aspect-reauth-darwin
-        path: aspect-reauth-release
+        path: aspect-reauth-signed
         if-no-files-found: error

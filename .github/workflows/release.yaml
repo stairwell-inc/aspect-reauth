@@ -1,9 +1,5 @@
 name: Release
 
-env:
-  DEVELOPER_ID: "Developer ID Application: Stairwell, Inc. (677UQVFGY8)"
-  INSTALLER_ID: "Developer ID Installer: Stairwell, Inc. (677UQVFGY8)"
-
 on:
   push:
     tags: ["v*"]
@@ -35,7 +31,7 @@ jobs:
     - run: |
         cp aspect-reauth-universal .tmp.$$
         trap "rm -f .tmp.$$" EXIT
-        codesign -s "${{ env.DEVELOPER_ID }}" -f --timestamp -o runtime .tmp.$$
+        codesign -s "Developer ID Application: Stairwell, Inc. (677UQVFGY8)" -f --timestamp -o runtime .tmp.$$
         chmod +x .tmp.$$
         mv .tmp.$$ aspect-reauth
 
@@ -63,7 +59,7 @@ jobs:
                  --identifier com.stairwell.aspect-reauth \
                  --version "${{ steps.get-version.outputs.version }}" \
                  --install-location /usr/local/bin \
-                 --sign "${{ env.INSTALLER_ID }}" \
+                 --sign "Developer ID Installer: Stairwell, Inc. (677UQVFGY8)" \
                  aspect-reauth.pkg
         xcrun notarytool submit aspect-reauth.pkg --keychain-profile notary-aspect-reauth --wait
         xcrun stapler staple aspect-reauth.pkg

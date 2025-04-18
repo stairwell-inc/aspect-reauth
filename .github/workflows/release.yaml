@@ -33,7 +33,6 @@ jobs:
         path: aspect-reauth-universal
 
     - run: |
-        set -e
         cp aspect-reauth-universal .tmp.$$
         trap "rm -f .tmp.$$" EXIT
         codesign -s "${{ env.DEVELOPER_ID }}" -f --timestamp -o runtime .tmp.$$
@@ -43,7 +42,6 @@ jobs:
     - name: Get version
       id: get-version
       run: |
-        set -e
         { echo -n version=
           ./aspect-reauth --version | cut -d' ' -f2
         } >> $GITHUB_OUTPUT
@@ -57,7 +55,6 @@ jobs:
         NOTARY_PASS: ${{ secrets.NOTARY_PASS }}
         DEV_ACCOUNT: ${{ secrets.DEV_ACCOUNT }}
       run: |
-        set -e
         xcrun notarytool store-credentials --apple-id "$DEV_ACCOUNT" --team-id 677UQVFGY8 --password "$NOTARY_PASS" notary-aspect-reauth
         mkdir .root.$$
         trap "rm -rf .root.$$" EXIT

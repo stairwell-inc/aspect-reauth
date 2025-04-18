@@ -56,7 +56,7 @@ jobs:
         trap "rm -rf .root.$$" EXIT
         cp aspect-reauth .root.$$
         pkgbuild --root .root.$$ \
-                 --identifier com.stairwell.aspect-reauth \
+                 --identifier com.stairwell.pkg.aspect-reauth \
                  --version "${{ steps.get-version.outputs.version }}" \
                  --install-location /usr/local/bin \
                  --sign "Developer ID Installer: Stairwell, Inc. (677UQVFGY8)" \

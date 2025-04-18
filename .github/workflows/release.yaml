@@ -92,7 +92,7 @@ jobs:
         ln aspect-reauth-pkg-darwin/aspect-reauth.pkg gh-release/aspect-reauth.pkg
         ln aspect-reauth-signed-darwin/aspect-reauth gh-release/aspect-reauth-darwin
         ln aspect-reauth-x86_64-unknown-linux-gnu/aspect-reauth gh-release/aspect-reauth-linux-amd64
-        ln aspect-reauth-x86_64-pc-windows-msvc gh-release/aspect-reauth-windows-amd64
+        ln aspect-reauth-x86_64-pc-windows-msvc/aspect-reauth.exe gh-release/aspect-reauth-windows-amd64.exe
     - uses: stairwell-inc/action-gh-release@v2
       with:
         draft: true

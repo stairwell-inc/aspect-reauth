@@ -42,7 +42,11 @@ jobs:
 
     - name: Get version
       id: get-version
-      run: echo "version=$(./aspect-reauth --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+      run: |
+        set -e
+        { echo -n version=
+          ./aspect-reauth --version | cut -d' ' -f2
+        } >> $GITHUB_OUTPUT
 
     - uses: stairwell-inc/upload-artifact@v4
       with:

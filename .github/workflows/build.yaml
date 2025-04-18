@@ -32,13 +32,13 @@ jobs:
         rustup toolchain install stable --profile minimal || exit 1
         rustup target add ${{ matrix.target }} || exit 1
     - uses: stairwell-inc/checkout@v4
-    - uses: stairwell-inc/cache@5a3ec84eff668545956fd18022155c47e93e2684
+    - uses: stairwell-inc/cache@v4
       with:
         path: ~/.cargo
         key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           cargo-${{ matrix.target }}-
-    - uses: stairwell-inc/cache@5a3ec84eff668545956fd18022155c47e93e2684
+    - uses: stairwell-inc/cache@v4
       with:
         path: target
         key: target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-${{ github.ref }}

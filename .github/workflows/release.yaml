@@ -1,9 +1,5 @@
 name: Release
 
-env:
-  NOTARY_PASS: ${{ secrets.NOTARY_PASS }}
-  DEV_ACCOUNT: ${{ secrets.DEV_ACCOUNT }}
-
 on:
   push:
     tags: ["v*"]
@@ -19,32 +15,57 @@ jobs:
     runs-on: [self-hosted, macOS]
     environment: macos
     steps:
+    - uses: stairwell-inc/checkout@v4
     - uses: stairwell-inc/download-artifact@v4
-      pattern: aspect-reauth-*-apple-darwin
+      with:
+        pattern: aspect-reauth-*-apple-darwin
     - run: |
         lipo -create -output aspect-reauth-universal aspect-reauth-{x86_64,aarch64}-apple-darwin/aspect-reauth
     - run: rm -rf aspect-reauth-*-apple-darwin
+
+    - uses: stairwell-inc/upload-artifact@v4
+      with:
+        name: aspect-reauth-universal-darwin
+        path: aspect-reauth-universal
+
     - run: |
-        set -e
         cp aspect-reauth-universal .tmp.$$
         trap "rm -f .tmp.$$" EXIT
-        codesign -s 'Developer ID Application: Stairwell, Inc. (677UQVFGY8)' -f --timestamp -o runtime .tmp.$$
-        mv .tmp.$$ aspect-reauth-signed
-    - run: |
-        set -e
+        codesign -s "Developer ID Application: Stairwell, Inc. (677UQVFGY8)" -f --timestamp -o runtime .tmp.$$
+        chmod +x .tmp.$$
+        mv .tmp.$$ aspect-reauth
+
+    - name: Get version
+      id: get-version
+      run: |
+        { echo -n version=
+          ./aspect-reauth --version | cut -d' ' -f2
+        } >> $GITHUB_OUTPUT
+
+    - uses: stairwell-inc/upload-artifact@v4
+      with:
+        name: aspect-reauth-signed-darwin
+        path: aspect-reauth
+
+    - env:
+        NOTARY_PASS: ${{ secrets.NOTARY_PASS }}
+        DEV_ACCOUNT: ${{ secrets.DEV_ACCOUNT }}
+      run: |
         xcrun notarytool store-credentials --apple-id "$DEV_ACCOUNT" --team-id 677UQVFGY8 --password "$NOTARY_PASS" notary-aspect-reauth
-        xcrun notarytool submit aspect-reauth-signed --keychain-profile notary-aspect-reauth --wait
-        cp aspect-reauth-signed .tmp.$$
-        trap "rm -f .tmp.$$" EXIT
-        xcrun stapler staple .tmp.$$
-        mv .tmp.$$ aspect-reauth-release
-        spctl --assess -vv --type execute aspect-reauth
+        mkdir .root.$$
+        trap "rm -rf .root.$$" EXIT
+        cp aspect-reauth .root.$$
+        pkgbuild --root .root.$$ \
+                 --identifier com.stairwell.pkg.aspect-reauth \
+                 --version "${{ steps.get-version.outputs.version }}" \
+                 --install-location /usr/local/bin \
+                 --sign "Developer ID Installer: Stairwell, Inc. (677UQVFGY8)" \
+                 aspect-reauth.pkg
+        xcrun notarytool submit aspect-reauth.pkg --keychain-profile notary-aspect-reauth --wait
+        xcrun stapler staple aspect-reauth.pkg
+        spctl --assess -vv --type install aspect-reauth.pkg
+
     - uses: stairwell-inc/upload-artifact@v4
       with:
-        name: aspect-reauth-darwin-steps
-        path: aspect-reauth-*
-    - uses: stairwell-inc/upload-artifact@v4
-      with:
-        name: aspect-reauth-darwin
-        path: aspect-reauth-release
-        if-no-files-found: error
+        name: aspect-reauth-pkg-darwin
+        path: aspect-reauth.pkg

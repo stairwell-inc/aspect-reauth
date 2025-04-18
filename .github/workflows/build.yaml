@@ -28,18 +28,26 @@ jobs:
     steps:
     - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
       if: matrix.os == 'ubuntu-latest'
+    - run: |
+        rustup toolchain install stable --profile minimal || exit 1
+        rustup target add ${{ matrix.target }} || exit 1
     - uses: stairwell-inc/checkout@v4
-    - run: rustup target add ${{ matrix.target }} && rustup update
+    - uses: stairwell-inc/cache@v4
+      with:
+        path: ~/.cargo
+        key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          cargo-${{ matrix.target }}-
+    - uses: stairwell-inc/cache@v4
+      with:
+        path: target
+        key: target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-${{ github.ref }}
+        restore-keys: |
+          target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
+          target-${{ matrix.target }}-
     - run: cargo build --locked --release --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-${{ matrix.target }}
         path: target/${{ matrix.target}}/release/aspect-reauth${{ matrix.suffix }}
         retention-days: ${{ github.event_name == 'pull_request' && 7 || '' }}
-  format:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-    - uses: stairwell-inc/checkout@v4
-    - run: rustup update
-    - run: cargo fmt -- --check

@@ -86,13 +86,13 @@ jobs:
     needs: [build, macos-release]
     runs-on: ubuntu-latest
     steps:
-    - run: stairwell-inc/download-artifact@v4
+    - uses: stairwell-inc/download-artifact@v4
     - run: |
         mkdir gh-release
         ln aspect-reauth-darwin/aspect-reauth-release gh-release/aspect-reauth-darwin
         ln aspect-reauth-x86_64-unknown-linux-gnu/aspect-reauth gh-release/aspect-reauth-linux-amd64
         ln aspect-reauth-x86_64-pc-windows-msvc gh-release/aspect-reauth-windows-amd64
-    - run: stairwell-inc/action-gh-release@v2
+    - uses: stairwell-inc/action-gh-release@v2
       with:
         draft: true
         files: gh-release/*

@@ -29,13 +29,13 @@ jobs:
     - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
       if: matrix.os == 'ubuntu-latest'
     - uses: stairwell-inc/checkout@v4
-    - uses: stairwell-inc/cache@v4
+    - uses: stairwell-inc/cache@5a3ec84eff668545956fd18022155c47e93e2684
       with:
         path: ~/.cargo
         key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           cargo-${{ matrix.target }}-
-    - uses: stairwell-inc/cache@v4
+    - uses: stairwell-inc/cache@5a3ec84eff668545956fd18022155c47e93e2684
       with:
         path: target
         key: target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-${{ github.ref }}

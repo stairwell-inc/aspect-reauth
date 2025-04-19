@@ -1,5 +1,8 @@
 name: Build
 
+env:
+  RUSTC_VERSION: 1.86.0
+
 on:
   pull_request:
   push:
@@ -28,26 +31,25 @@ jobs:
     steps:
     - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
       if: matrix.os == 'ubuntu-latest'
-    - run: |
-        rustup toolchain install stable --profile minimal || exit 1
-        rustup target add ${{ matrix.target }} || exit 1
     - uses: stairwell-inc/checkout@v4
     - uses: stairwell-inc/cache@v4
       with:
-        path: ~/.cargo
-        key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+        path: |
+          ~/.cargo
+          target
+        key: rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          cargo-${{ matrix.target }}-
-    - uses: stairwell-inc/cache@v4
-      with:
-        path: target
-        key: target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-${{ github.ref }}
-        restore-keys: |
-          target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-          target-${{ matrix.target }}-
-    - run: cargo build --locked --release --target ${{ matrix.target }}
+          rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.run_id }}-
+          rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
+          rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-
+    - run: rustup toolchain install ${{ env.RUSTC_VERSION }} --target ${{ matrix.target }} --profile minimal
+    - run: rustup default ${{ env.RUSTC_VERSION }}
+    - id: set-profile
+      run: echo profile=${{ github.event_name == 'pull_request' && 'fastbuild' || 'release' }} >> $GITHUB_OUTPUT
+      shell: bash
+    - run: cargo build --locked --profile ${{ steps.set-profile.outputs.profile }} --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-${{ matrix.target }}
-        path: target/${{ matrix.target}}/release/aspect-reauth${{ matrix.suffix }}
+        path: target/${{ matrix.target }}/${{ steps.set-profile.outputs.profile }}/aspect-reauth${{ matrix.suffix }}
         retention-days: ${{ github.event_name == 'pull_request' && 7 || '' }}

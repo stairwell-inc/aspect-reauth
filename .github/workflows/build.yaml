@@ -37,11 +37,11 @@ jobs:
         path: |
           ~/.cargo
           target
-        key: rust-${{ matrix.target }}-${{ env.RUSTC_VERSION }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          rust-${{ matrix.target }}-${{ env.RUSTC_VERSION }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.run_id }}-
-          rust-${{ matrix.target }}-${{ env.RUSTC_VERSION }}-${{ hashFiles('**/Cargo.lock') }}-
-          rust-${{ matrix.target }}-${{ env.RUSTC_VERSION }}-
+          rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.run_id }}-
+          rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
+          rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-
     - run: |
         rustup toolchain install ${{ env.RUSTC_VERSION }} --profile minimal || exit 1
         rustup target add ${{ matrix.target }} || exit 1

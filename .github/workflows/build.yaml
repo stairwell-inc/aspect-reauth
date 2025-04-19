@@ -34,17 +34,13 @@ jobs:
     - uses: stairwell-inc/checkout@v4
     - uses: stairwell-inc/cache@v4
       with:
-        path: ~/.cargo
-        key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+        path: |
+          ~/.cargo
+          target
+        key: rust-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
         restore-keys: |
-          cargo-${{ matrix.target }}-
-    - uses: stairwell-inc/cache@v4
-      with:
-        path: target
-        key: target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-${{ github.ref }}
-        restore-keys: |
-          target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-          target-${{ matrix.target }}-
+          rust-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
+          rust-${{ matrix.target }}-
     - run: cargo build --locked --release --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:

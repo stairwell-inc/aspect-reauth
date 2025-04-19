@@ -77,9 +77,11 @@ jobs:
     - run: rustup default ${{ env.RUSTC_VERSION }}
 
     - run: cargo build --locked --profile ${{ env.profile }} --target ${{ env.target }}
-
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-${{ env.target }}
         path: target/${{ env.target }}/${{ env.profile }}/aspect-reauth${{ env.suffix }}
         retention-days: ${{ env.retention_days }}
+
+    - run: cargo publish --locked --dry-run --target ${{ env.target }}
+      if: github.event_name == 'workflow_call'

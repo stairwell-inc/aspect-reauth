@@ -45,10 +45,12 @@ jobs:
     - run: |
         rustup toolchain install ${{ env.RUSTC_VERSION }} --profile minimal || exit 1
         rustup target add ${{ matrix.target }} || exit 1
-    - run: cargo build --locked ${{ github.event_name != 'pull_request' && '--release' || '' }} --target ${{ matrix.target }}
+    - id: set-profile
+      run: echo profile=${{ github.event_name == 'pull_request' && 'fastbuild' || 'release' }} >> $GITHUB_OUTPUT
+    - run: cargo build --locked --profile ${{ steps.set-profile.outputs.profile }} --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-${{ matrix.target }}
-        path: target/${{ matrix.target}}/release/aspect-reauth${{ matrix.suffix }}
+        path: target/${{ matrix.target}}/${{ steps.set-profile.outputs.profile }}/aspect-reauth${{ matrix.suffix }}
         retention-days: ${{ github.event_name == 'pull_request' && 7 || '' }}
     - run: cargo publish --locked --dry-run --target ${{ matrix.target }}

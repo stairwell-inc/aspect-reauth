@@ -43,10 +43,12 @@ jobs:
           rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
           rust-${{ env.RUSTC_VERSION }}-${{ matrix.target }}-
     - run: |
-        rustup toolchain install ${{ env.RUSTC_VERSION }} --profile minimal || exit 1
-        rustup target add ${{ matrix.target }} || exit 1
+        rustup toolchain install ${{ env.RUSTC_VERSION }}
+        rustup target add ${{ matrix.target }}
+      shell: bash
     - id: set-profile
       run: echo profile=${{ github.event_name == 'pull_request' && 'fastbuild' || 'release' }} >> $GITHUB_OUTPUT
+      shell: bash
     - run: cargo build --locked --profile ${{ steps.set-profile.outputs.profile }} --target ${{ matrix.target }}
     - uses: stairwell-inc/upload-artifact@v4
       with:

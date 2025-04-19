@@ -6,6 +6,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: stairwell-inc/checkout@v4
+    - run: |
+        { echo -n VERSION=
+          grep '^version =' Cargo.toml | head -n1 | sed 's/version = "\(.*\)"/\1/'
+        } >> $GITHUB_ENV
+    outputs:
+      version: ${{ env.VERSION }}
+
   build:
     uses: ./.github/workflows/build.yaml
 
@@ -22,7 +33,7 @@ jobs:
 
   macos-release:
     name: macOS Release
-    needs: build
+    needs: [build, get-version]
     runs-on: [self-hosted, macOS]
     environment: macos
     steps:
@@ -46,13 +57,6 @@ jobs:
         chmod +x .tmp.$$
         mv .tmp.$$ aspect-reauth
 
-    - name: Get version
-      id: get-version
-      run: |
-        { echo -n version=
-          ./aspect-reauth --version | cut -d' ' -f2
-        } >> $GITHUB_OUTPUT
-
     - uses: stairwell-inc/upload-artifact@v4
       with:
         name: aspect-reauth-signed-darwin
@@ -68,7 +72,7 @@ jobs:
         cp aspect-reauth .root.$$
         pkgbuild --root .root.$$ \
                  --identifier com.stairwell.pkg.aspect-reauth \
-                 --version "${{ steps.get-version.outputs.version }}" \
+                 --version "${{ needs.get-version.outputs.version }}" \
                  --install-location /usr/local/bin \
                  --sign "Developer ID Installer: Stairwell, Inc. (677UQVFGY8)" \
                  aspect-reauth.pkg
@@ -83,16 +87,18 @@ jobs:
         if-no-files-found: error
 
   github-release:
-    needs: [build, macos-release]
+    needs: [build, get-version, macos-release]
     runs-on: ubuntu-latest
     steps:
     - uses: stairwell-inc/download-artifact@v4
-    - run: |
+    - env:
+        VERSION: ${{ needs.get-version.outputs.version }}
+      run: |
         mkdir gh-release
-        ln aspect-reauth-pkg-darwin/aspect-reauth.pkg gh-release/aspect-reauth.pkg
-        ln aspect-reauth-signed-darwin/aspect-reauth gh-release/aspect-reauth-darwin
-        ln aspect-reauth-x86_64-unknown-linux-gnu/aspect-reauth gh-release/aspect-reauth-linux-amd64
-        ln aspect-reauth-x86_64-pc-windows-msvc/aspect-reauth.exe gh-release/aspect-reauth-windows-amd64.exe
+        ln aspect-reauth-pkg-darwin/aspect-reauth.pkg gh-release/aspect-reauth-$VERSION.pkg
+        ln aspect-reauth-signed-darwin/aspect-reauth gh-release/aspect-reauth-$VERSION-darwin
+        ln aspect-reauth-x86_64-unknown-linux-gnu/aspect-reauth gh-release/aspect-reauth-$VERSION-linux-amd64
+        ln aspect-reauth-x86_64-pc-windows-msvc/aspect-reauth.exe gh-release/aspect-reauth-$VERSION-windows-amd64.exe
     - uses: stairwell-inc/action-gh-release@v2
       with:
         draft: true

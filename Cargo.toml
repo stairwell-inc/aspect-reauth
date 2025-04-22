@@ -12,6 +12,10 @@ exclude = [
     ".gitignore",
 ]
 
+[profile.fastbuild]
+inherits = "dev"
+debug = "line-tables-only"
+
 [dependencies]
 anyhow = "1.0.95"
 clap = { version = "4.5.29", features = ["derive", "env"] }

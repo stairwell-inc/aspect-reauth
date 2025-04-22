@@ -11,5 +11,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: stairwell-inc/checkout@v4
-    - run: rustup update
+    - run: rustup toolchain install stable && rustup default stable
     - run: cargo fmt -- --check

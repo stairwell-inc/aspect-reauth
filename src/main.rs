@@ -63,7 +63,7 @@ struct Args {
         default_value = "infer",
         default_missing_value = "true",
         num_args = 0..=1,
-        require_equals = true
+        require_equals = true,
     )]
     create_socket: CreateSocket,
 

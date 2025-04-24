@@ -8,6 +8,11 @@ on:
   push:
     branches: ["main"]
   workflow_call:
+    inputs:
+      release:
+        default: false
+        type: boolean
+        description: "Whether we are building a release"
 
 jobs:
   build:
@@ -42,12 +47,12 @@ jobs:
         if [[ windows = $github_os ]]; then
           suffix=.exe
         fi
-        retention_days=
-        if [[ pull_request = $event_name ]]; then
+        if [[ true = "$release" ]]; then
+          profile=release
+          retention_days=90
+        else
           profile=fastbuild
           retention_days=7
-        else
-          profile=release
         fi
 
         cat >>$GITHUB_ENV <<EOF
@@ -59,7 +64,7 @@ jobs:
       env:
         arch: ${{ matrix.arch }}
         github_os: ${{ matrix.os }}
-        event_name: ${{ github.event_name }}
+        release: ${{ inputs.release }}
 
     - run: sudo sh -c 'apt update && apt install libdbus-1-dev'
       if: matrix.os == 'ubuntu'
@@ -84,4 +89,4 @@ jobs:
         retention-days: ${{ env.retention_days }}
 
     - run: cargo publish --locked --dry-run --target ${{ env.target }}
-      if: github.event_name == 'workflow_call'
+      if: inputs.release

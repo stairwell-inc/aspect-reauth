@@ -7,8 +7,7 @@ Because we directly call the macOS keychain APIs ourselves, assuming you trust t
 ## Installation
 
 ```sh
-cargo build --release &&
-  sudo install target/release/aspect-reauth /usr/local/bin
+cargo install aspect-reauth
 ```
 
 You may want to customize the default remote name or possibly the default name of the Aspect credential helper binary. These can be customized by setting the `ASPECT_REMOTE` and `ASPECT_CREDENTIAL_HELPER` environment variables. If they are set at runtime, they override the defaults; if they are set at build time, they become the defaults for that binary.
@@ -18,7 +17,7 @@ E.g.:
 ```sh
 env ASPECT_REMOTE=aw-remote-ext.mydomain.example \
     ASPECT_CREDENTIAL_HELPER=credential-helper \
-    cargo build --release
+    cargo install aspect-reauth
 ```
 
 ## FAQ

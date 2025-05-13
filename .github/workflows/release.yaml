@@ -42,11 +42,9 @@ jobs:
         path: aspect-reauth-universal
 
     - run: |
-        cp aspect-reauth-universal .tmp.$$
-        trap "rm -f .tmp.$$" EXIT
-        codesign -s "Developer ID Application: Stairwell, Inc. (677UQVFGY8)" -f --timestamp -o runtime .tmp.$$
-        chmod +x .tmp.$$
-        mv .tmp.$$ aspect-reauth
+        cp aspect-reauth-universal aspect-reauth
+        codesign -s "Developer ID Application: Stairwell, Inc. (677UQVFGY8)" -f --timestamp -o runtime aspect-reauth
+        chmod +x aspect-reauth
 
     - name: Get version
       id: get-version

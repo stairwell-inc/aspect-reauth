@@ -16,13 +16,11 @@
 mod config;
 mod temp_socket;
 
-use std::{
-    ffi::OsStr,
-    process::{Command, Stdio},
-};
+use std::ffi::OsStr;
 
 use anyhow::{Context, Result};
 use config::infer_create_socket;
+use smol::process::{Command, Stdio};
 use temp_socket::TempSocket;
 
 #[derive(Clone, Copy)]
@@ -45,12 +43,17 @@ pub struct SshMux<'a, T: AsRef<OsStr>> {
 }
 
 impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
-    pub fn new(host: &'a str, ssh_args: &'a [T], create_socket: CreateSocket) -> Result<Self> {
-        let socket = create_socket
-            .into_option_bool()
-            .unwrap_or_else(|| infer_create_socket(host))
-            .then(|| TempSocket::new("aspect-reauth-"))
-            .transpose()?;
+    pub async fn new(
+        host: &'a str,
+        ssh_args: &'a [T],
+        create_socket: CreateSocket,
+    ) -> Result<Self> {
+        let socket = match create_socket.into_option_bool() {
+            Some(val) => val,
+            None => infer_create_socket(host).await,
+        }
+        .then(|| TempSocket::new("aspect-reauth-"))
+        .transpose()?;
         let mut cmd = Command::new("ssh");
         cmd.args(ssh_args);
         if let Some(socket) = &socket {
@@ -73,6 +76,7 @@ impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .output()
+            .await
             .context("failed to start SSH control master")?;
         if !output.status.success() {
             anyhow::bail!(
@@ -109,7 +113,7 @@ impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
         ret
     }
 
-    pub fn cleanup(&mut self) -> Result<()> {
+    pub async fn cleanup(&mut self) -> Result<()> {
         let Some(socket) = self.socket.take() else {
             return Ok(());
         };
@@ -122,6 +126,7 @@ impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
+            .await
             .context("failed to cleanup SSH control master")?;
         Ok(())
     }
@@ -129,9 +134,11 @@ impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
 
 impl<T: AsRef<OsStr>> Drop for SshMux<'_, T> {
     fn drop(&mut self) {
-        if let Err(e) = self.cleanup() {
-            eprintln!("cleanup ssh: {}", e);
-        }
+        smol::block_on(async {
+            if let Err(e) = self.cleanup().await {
+                eprintln!("cleanup ssh: {}", e);
+            }
+        });
     }
 }
 

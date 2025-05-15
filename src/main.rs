@@ -15,18 +15,16 @@
 
 mod ssh_mux;
 
-use std::{
-    ffi::OsStr,
-    io::Write,
-    process::{Command, Stdio},
-    str::FromStr,
-    thread,
-};
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use keyring::Entry;
 use regex::bytes::Regex;
+use smol::{
+    io::AsyncWriteExt,
+    process::{Command, Stdio},
+};
 use ssh_mux::{CreateSocket, SshMux};
 
 const DEFAULT_REMOTE: &str = env!("ASPECT_REMOTE");
@@ -47,9 +45,17 @@ struct Args {
     #[arg(env = "ASPECT_CREDENTIAL_HELPER", default_value = DEFAULT_HELPER, long)]
     credential_helper: String,
 
-    /// Force re-login even if the credentials are still valid
+    /// Force re-login and sync even if the credentials are still valid
     #[arg(short, long)]
     force: bool,
+
+    /// Force re-login even if the credentials are still valid
+    #[arg(short = 'l', long, conflicts_with = "force")]
+    force_local: bool,
+
+    /// Force remote sync even if the credentials are still valid
+    #[arg(short = 'r', long, conflicts_with = "force")]
+    force_remote: bool,
 
     /// Use the session (rather than user) keyring on the VM
     #[arg(short, long)]
@@ -77,37 +83,64 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    smol::block_on(async_main())
+}
+
+async fn async_main() -> Result<()> {
     let mut args = Args::parse();
     if args.no_create_socket {
         args.create_socket = CreateSocket::Specify(false);
     }
-    let args = args;
+    if args.force {
+        args.force_remote = true;
+        args.force_local = true;
+    }
+    let args = Arc::new(args);
 
     let ssh = SshMux::new(&args.host, &args.ssh_args, args.create_socket)
+        .await
         .context("failed setting up ssh session")?;
 
-    if !args.force && !needs_refresh(&args, &ssh)? {
-        // If we have valid credentials and didn't ask to unconditionally refresh them, then we're
-        // done.
+    let remote_needs_refresh = async {
+        Ok::<bool, anyhow::Error>(
+            args.force_remote || needs_refresh(&args, |s| ssh.command(s)).await?,
+        )
+    };
+    if args.force_local || needs_refresh(&args, Command::new).await? {
+        let status = Command::new(&args.credential_helper)
+            .arg("login")
+            .arg(&args.remote)
+            .stdin(Stdio::null())
+            .status()
+            .await
+            .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
+        if !status.success() {
+            anyhow::bail!("{} login: {}", args.credential_helper, status);
+        }
+        let password = get_credential("AspectWorkflows", &args)
+            .await
+            .context("failed to fetch fresh password from by aspect-credential-helper")?;
+        set_credential("aspect-reauth", &args, password)
+            .await
+            .context("failed to store password for aspect-reauth")?;
+    }
+    if !remote_needs_refresh.await? {
         println!("Credential refresh not needed. Have a nice day.");
         return Ok(());
     }
 
-    let status = Command::new(&args.credential_helper)
-        .arg("login")
-        .arg(&args.remote)
-        .stdin(Stdio::null())
-        .status()
-        .with_context(|| format!("failed to spawn {}", &args.credential_helper))?;
-    if !status.success() {
-        anyhow::bail!("{} login: {}", args.credential_helper, status);
-    }
-
-    let entry =
-        Entry::new("AspectWorkflows", &args.remote).context("failed to find aspect credential")?;
-    let credential = entry
-        .get_password()
-        .context("failed to get aspect credential from keychain")?;
+    let password = match get_credential("aspect-reauth", &args).await {
+        Ok(p) => p,
+        _ => {
+            let password = get_credential("AspectWorkflows", &args)
+                .await
+                .context("failed to fetch password from aspect-credential-helper")?;
+            if let Err(e) = set_credential("aspect-reauth", &args, password.clone()).await {
+                eprintln!("failed to sync aspect-reauth password:\n{e}");
+            }
+            password
+        }
+    };
 
     let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
     let keychain = if args.session_keyring { "@s" } else { "@u" };
@@ -120,16 +153,25 @@ fn main() -> Result<()> {
         .spawn()
         .with_context(|| format!("failed to run keyctl on {}", &args.host))?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
-    thread::spawn(move || {
-        let _ = stdin.write_all(credential.as_bytes());
-    });
-    let output = child.wait_with_output()?;
+    stdin.write_all(password.as_bytes()).await?;
+    drop(stdin);
+    let output = child.output().await?;
     if !output.status.success() {
         anyhow::bail!(
             "ssh {} keyctl padd: {}\n\n{}",
             args.host,
             output.status,
             String::from_utf8_lossy(&output.stderr).trim(),
+        );
+    }
+
+    if needs_refresh(&args, |s| ssh.command(s)).await? {
+        anyhow::bail!(
+            concat!(
+                "We tried syncing your credentials to {} but they are still invalid.\n",
+                "Try rerunning with --force."
+            ),
+            args.host
         );
     }
 
@@ -140,9 +182,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn needs_refresh<T: AsRef<OsStr>>(args: &Args, ssh: &SshMux<T>) -> Result<bool> {
-    let mut child = ssh
-        .command(&args.credential_helper)
+async fn needs_refresh<'a>(args: &'a Args, f: impl FnOnce(&'a str) -> Command) -> Result<bool> {
+    let mut child = f(&args.credential_helper)
         .arg("get")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -156,11 +197,11 @@ fn needs_refresh<T: AsRef<OsStr>>(args: &Args, ssh: &SshMux<T>) -> Result<bool> 
         })?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
     let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
-    thread::spawn(move || {
-        let _ = stdin.write_all(test_string.as_bytes());
-    });
+    stdin.write_all(test_string.as_bytes()).await?;
+    drop(stdin);
     let output = child
-        .wait_with_output()
+        .output()
+        .await
         .with_context(|| format!("failed waiting for {}", &args.credential_helper))?;
     if !output.status.success() {
         let re = Regex::new(&format!(
@@ -179,6 +220,26 @@ fn needs_refresh<T: AsRef<OsStr>>(args: &Args, ssh: &SshMux<T>) -> Result<bool> 
         return Ok(true);
     }
     Ok(false)
+}
+
+async fn get_credential(name: &'static str, args: &Arc<Args>) -> Result<String> {
+    let args = args.clone();
+    smol::unblock(move || -> Result<String> {
+        Entry::new(name, &args.remote)
+            .and_then(|e| e.get_password())
+            .context("failed to get aspect credential from keychain")
+    })
+    .await
+}
+
+async fn set_credential(name: &'static str, args: &Arc<Args>, password: String) -> Result<()> {
+    let args = args.clone();
+    smol::unblock(move || -> Result<()> {
+        Entry::new(name, &args.remote)
+            .and_then(|e| e.set_password(&password))
+            .context("failed to set aspect credential in keychain")
+    })
+    .await
 }
 
 impl FromStr for CreateSocket {

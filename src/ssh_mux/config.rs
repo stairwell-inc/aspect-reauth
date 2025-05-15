@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::process::Command;
+use smol::process::Command;
 
 /// Guess if we should create create our own socket or attempt to reuse an existing one.
 ///
@@ -23,8 +23,8 @@ use std::process::Command;
 /// We don't bother checking the timeout value or errors here, since we will fall back to creating
 /// a new socket if the control socket has gone away, and any errors will be reported later when we
 /// attempt to connect.
-pub fn infer_create_socket(host: &str) -> bool {
-    let Ok(output) = Command::new("ssh").args(["-G", "--", host]).output() else {
+pub async fn infer_create_socket(host: &str) -> bool {
+    let Ok(output) = Command::new("ssh").args(["-G", "--", host]).output().await else {
         return false;
     };
     if !output.status.success() {

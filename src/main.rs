@@ -101,13 +101,12 @@ async fn async_main() -> Result<()> {
         .await
         .context("failed setting up ssh session")?;
 
-    let local_needs_refresh = async || -> Result<bool> {
-        Ok(args.force_local || needs_refresh(&args, Command::new(&args.credential_helper)).await?)
-    }();
-    let remote_needs_refresh = async || -> Result<bool> {
-        Ok(args.force_remote || needs_refresh(&args, ssh.command(&args.credential_helper)).await?)
-    }();
-    if local_needs_refresh.await? {
+    let remote_needs_refresh = async {
+        Ok::<bool, anyhow::Error>(
+            args.force_remote || needs_refresh(&args, |s| ssh.command(s)).await?,
+        )
+    };
+    if args.force_local || needs_refresh(&args, Command::new).await? {
         let status = Command::new(&args.credential_helper)
             .arg("login")
             .arg(&args.remote)
@@ -166,7 +165,7 @@ async fn async_main() -> Result<()> {
         );
     }
 
-    if needs_refresh(&args, ssh.command(&args.credential_helper)).await? {
+    if needs_refresh(&args, |s| ssh.command(s)).await? {
         anyhow::bail!(
             concat!(
                 "We tried syncing your credentials to {} but they are still invalid.\n",
@@ -183,8 +182,8 @@ async fn async_main() -> Result<()> {
     Ok(())
 }
 
-async fn needs_refresh(args: &Args, mut cmd: Command) -> Result<bool> {
-    let mut child = cmd
+async fn needs_refresh<'a>(args: &'a Args, f: impl FnOnce(&'a str) -> Command) -> Result<bool> {
+    let mut child = f(&args.credential_helper)
         .arg("get")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -225,9 +224,9 @@ async fn needs_refresh(args: &Args, mut cmd: Command) -> Result<bool> {
 async fn get_credential(name: &'static str, args: &Arc<Args>) -> Result<String> {
     let args = args.clone();
     smol::unblock(move || -> Result<String> {
-        Ok(Entry::new(name, &args.remote)
+        Entry::new(name, &args.remote)
             .and_then(|e| e.get_password())
-            .context("failed to get aspect credential from keychain")?)
+            .context("failed to get aspect credential from keychain")
     })
     .await
 }
@@ -235,9 +234,9 @@ async fn get_credential(name: &'static str, args: &Arc<Args>) -> Result<String> 
 async fn set_credential(name: &'static str, args: &Arc<Args>, password: String) -> Result<()> {
     let args = args.clone();
     smol::unblock(move || -> Result<()> {
-        Ok(Entry::new(name, &args.remote)
+        Entry::new(name, &args.remote)
             .and_then(|e| e.set_password(&password))
-            .context("failed to set aspect credential in keychain")?)
+            .context("failed to set aspect credential in keychain")
     })
     .await
 }

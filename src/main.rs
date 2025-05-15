@@ -198,6 +198,7 @@ async fn needs_refresh<'a>(args: &'a Args, f: impl FnOnce(&'a str) -> Command) -
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
     let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);
     stdin.write_all(test_string.as_bytes()).await?;
+    drop(stdin);
     let output = child
         .output()
         .await

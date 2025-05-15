@@ -166,6 +166,16 @@ async fn async_main() -> Result<()> {
         );
     }
 
+    if needs_refresh(&args, ssh.command(&args.credential_helper)).await? {
+        anyhow::bail!(
+            concat!(
+                "We tried syncing your credentials to {} but they are still invalid.\n",
+                "Try rerunning with --force."
+            ),
+            args.host
+        );
+    }
+
     println!(
         "Aspect credentials synced to {}. Have a nice day.",
         args.host

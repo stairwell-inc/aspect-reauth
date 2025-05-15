@@ -118,13 +118,30 @@ async fn async_main() -> Result<()> {
         if !status.success() {
             anyhow::bail!("{} login: {}", args.credential_helper, status);
         }
+        let password = get_credential("AspectWorkflows", &args)
+            .await
+            .context("failed to fetch fresh password from by aspect-credential-helper")?;
+        set_credential("aspect-reauth", &args, password)
+            .await
+            .context("failed to store password for aspect-reauth")?;
     }
     if !remote_needs_refresh.await? {
         println!("Credential refresh not needed. Have a nice day.");
         return Ok(());
     }
 
-    let credential = get_credential("AspectWorkflows", &args).await?;
+    let password = match get_credential("aspect-reauth", &args).await {
+        Ok(p) => p,
+        _ => {
+            let password = get_credential("AspectWorkflows", &args)
+                .await
+                .context("failed to fetch password from aspect-credential-helper")?;
+            if let Err(e) = set_credential("aspect-reauth", &args, password.clone()).await {
+                eprintln!("failed to sync aspect-reauth password:\n{e}");
+            }
+            password
+        }
+    };
 
     let key_name = format!("keyring-rs:{}@AspectWorkflows", args.remote);
     let keychain = if args.session_keyring { "@s" } else { "@u" };
@@ -137,7 +154,7 @@ async fn async_main() -> Result<()> {
         .spawn()
         .with_context(|| format!("failed to run keyctl on {}", &args.host))?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
-    stdin.write_all(credential.as_bytes()).await?;
+    stdin.write_all(password.as_bytes()).await?;
     drop(stdin);
     let output = child.output().await?;
     if !output.status.success() {
@@ -201,7 +218,18 @@ async fn get_credential(name: &'static str, args: &Arc<Args>) -> Result<String> 
         Ok(Entry::new(name, &args.remote)
             .and_then(|e| e.get_password())
             .context("failed to get aspect credential from keychain")?)
-    }).await
+    })
+    .await
+}
+
+async fn set_credential(name: &'static str, args: &Arc<Args>, password: String) -> Result<()> {
+    let args = args.clone();
+    smol::unblock(move || -> Result<()> {
+        Ok(Entry::new(name, &args.remote)
+            .and_then(|e| e.set_password(&password))
+            .context("failed to set aspect credential in keychain")?)
+    })
+    .await
 }
 
 impl FromStr for CreateSocket {

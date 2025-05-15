@@ -1,6 +1,6 @@
 [package]
 name = "aspect-reauth"
-version = "0.7.2"
+version = "0.8.0"
 authors = ["Stairwell, Inc. <eng@stairwell.com>"]
 edition = "2021"
 homepage = "https://github.com/stairwell-inc/aspect-reauth"
@@ -24,5 +24,5 @@ smol = "2.0.2"
 tempfile = "3.16.0"
 
 [dependencies.keyring]
-version = "3.6.1"
+version = "3.6.2"
 features = ["apple-native", "linux-native-sync-persistent", "windows-native"]

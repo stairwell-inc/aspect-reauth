@@ -1,0 +1,48 @@
+name: Upload to Kandji
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
+
+jobs:
+  upload:
+    name: Upload PKG to Kandji
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, macOS]
+    environment: macos
+
+    steps:
+      - name: Install GitHub CLI (if needed)
+        run: |
+          if ! command -v gh >/dev/null; then
+            brew install gh
+          fi
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Download latest successful artifact
+        run: |
+          RUN_ID=$(gh run list -w release.yaml --limit 1 --json databaseId -q '.[0].databaseId')
+          gh run download "$RUN_ID" --name aspect-reauth-pkg-darwin
+      
+      - name: Get version from pkg
+        id: version
+        run: |
+          VERSION=$(./aspect-reuth --version | cut -d ' ' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Kandji
+        env:
+          KANDJI_API_TOKEN: ${{ secrets.KANDJI_API_TOKEN }}
+        run: |
+          if [ ! -f aspect-reauth.pkg ]; then
+            echo "❌ aspect-reauth.pkg not found"
+            exit 1
+          fi
+          VERSION=${{ steps.version.outputs.version }}
+          curl -X POST https://stairwell.kandji.io/api/v1/upload \
+            -H "Authorization: Bearer $KANDJI_API_TOKEN" \
+            -F "file=@aspect-reauth.pkg" \
+            -F "name=Aspect Reauth v$VERSION"
+

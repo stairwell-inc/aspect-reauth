@@ -10,7 +10,7 @@ jobs:
   upload:
     name: Upload PKG to Kandji
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-latest
     environment: macos
 
     steps:

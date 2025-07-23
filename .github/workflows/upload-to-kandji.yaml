@@ -22,9 +22,9 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
       - name: Download latest successful artifact
-        run: |
-          RUN_ID=$(gh run list -w release.yaml --limit 1 --json databaseId -q '.[0].databaseId')
-          gh run download "$RUN_ID" --name aspect-reauth-pkg-darwin
+        uses: stairwell-inc/download-artifact@v4
+        with:
+          name: aspect-reauth-pkg-darwin
       
       - name: Get version from pkg
         id: version

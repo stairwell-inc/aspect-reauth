@@ -12,15 +12,6 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: macos-latest
     environment: macos
-
-    steps:
-      - name: Install GitHub CLI (if needed)
-        run: |
-          if ! command -v gh >/dev/null; then
-            brew install gh
-          fi
-          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
-
       - name: Download latest successful artifact
         uses: stairwell-inc/download-artifact@v4
         with:

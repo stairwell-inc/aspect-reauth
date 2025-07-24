@@ -12,6 +12,8 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: macos-latest
     environment: macos
+    
+    steps:
       - name: Download latest successful artifact
         uses: stairwell-inc/download-artifact@v4
         with:

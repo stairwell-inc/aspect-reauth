@@ -3,7 +3,7 @@ name = "aspect-reauth"
 version = "0.8.0"
 authors = ["Stairwell, Inc. <eng@stairwell.com>"]
 edition = "2021"
-homepage = "https://github.com/stairwell-inc/aspect-reauth"
+repository = "https://github.com/stairwell-inc/aspect-reauth"
 license = "Apache-2.0"
 description = "Sync fresh Aspect credentials with your dev VM"
 

@@ -18,9 +18,11 @@ jobs:
     environment: crates-io
     steps:
     - uses: stairwell-inc/checkout@v4
+    - uses: rust-lang/crates-io-auth-action@v1
+      id: auth
     - run: cargo publish --no-verify --locked
       env:
-        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   macos-release:
     name: macOS Release

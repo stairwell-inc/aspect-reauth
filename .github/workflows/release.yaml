@@ -18,7 +18,7 @@ jobs:
     environment: crates-io
     steps:
     - uses: stairwell-inc/checkout@v4
-    - uses: rust-lang/crates-io-auth-action@v1
+    - uses: stairwell-inc/crates-io-auth-action@v1
       id: auth
     - run: cargo publish --no-verify --locked
       env:

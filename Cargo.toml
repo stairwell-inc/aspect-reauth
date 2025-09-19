@@ -17,7 +17,7 @@ inherits = "dev"
 debug = "line-tables-only"
 
 [dependencies]
-anyhow = "1.0.95"
+anyhow = "1.0.100"
 clap = { version = "4.5.29", features = ["derive", "env"] }
 regex = "1.11.1"
 smol = "2.0.2"

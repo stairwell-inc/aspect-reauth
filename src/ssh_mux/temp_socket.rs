@@ -42,7 +42,7 @@ impl TempSocket {
     }
 
     fn from_tempdir(dir: TempDir) -> Self {
-        let mut path = dir.into_path();
+        let mut path = dir.keep();
         path.push("sock");
         TempSocket {
             path: path.into_boxed_path(),

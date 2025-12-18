@@ -1,8 +1,5 @@
 name: Build
 
-env:
-  RUSTC_VERSION: 1.86.0
-
 on:
   pull_request:
   push:
@@ -70,16 +67,11 @@ jobs:
       if: matrix.os == 'ubuntu'
 
     - uses: stairwell-inc/checkout@v4
-    - uses: stairwell-inc/cache@v4
+    - run: rustup toolchain install --profile minimal
+    - uses: stairwell-inc/rust-cache@v2
       with:
-        path: |
-          ~/.cargo
-          target
-        key: rust-${{ env.RUSTC_VERSION }}-${{ env.target }}-${{ env.profile }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          rust-${{ env.RUSTC_VERSION }}-${{ env.target }}-${{ env.profile }}-
-    - run: rustup toolchain install ${{ env.RUSTC_VERSION }} --target ${{ env.target }} --profile minimal
-    - run: rustup default ${{ env.RUSTC_VERSION }}
+        key: ${{ env.profile }}-${{ env.target }}
+    - run: rustup target add ${{ env.target }}
 
     - run: cargo build --locked --profile ${{ env.profile }} --target ${{ env.target }}
     - uses: stairwell-inc/upload-artifact@v4

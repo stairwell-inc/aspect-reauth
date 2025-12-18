@@ -72,7 +72,6 @@ jobs:
       with:
         key: ${{ env.profile }}-${{ env.target }}
     - run: rustup target add ${{ env.target }}
-    - run: rustup default ${{ env.RUSTC_VERSION }}
 
     - run: cargo build --locked --profile ${{ env.profile }} --target ${{ env.target }}
     - uses: stairwell-inc/upload-artifact@v4

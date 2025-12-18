@@ -11,5 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: stairwell-inc/checkout@v4
-    - run: rustup toolchain install stable && rustup default stable
+    - run: rustup component add rustfmt clippy
     - run: cargo fmt -- --check
+    - run: cargo clippy

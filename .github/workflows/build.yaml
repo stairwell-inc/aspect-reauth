@@ -70,7 +70,7 @@ jobs:
     - run: rustup toolchain install --target ${{ env.target }} --profile minimal
     - uses: stairwell-inc/rust-cache@v2
       with:
-        key: ${{ env.profile }}
+        key: ${{ env.profile }}-${{ env.target }}
     - run: rustup default ${{ env.RUSTC_VERSION }}
 
     - run: cargo build --locked --profile ${{ env.profile }} --target ${{ env.target }}

@@ -102,11 +102,9 @@ async fn async_main() -> Result<()> {
         .context("failed setting up ssh session")?;
 
     let remote_needs_refresh = async {
-        Ok::<bool, anyhow::Error>(
-            args.force_remote || needs_refresh(&args, |s| ssh.command(s)).await?,
-        )
+        Ok::<bool, anyhow::Error>(args.force_remote || needs_refresh(&args, Some(&ssh)).await?)
     };
-    if args.force_local || needs_refresh(&args, Command::new).await? {
+    if args.force_local || needs_refresh(&args, None).await? {
         let status = Command::new(&args.credential_helper)
             .arg("login")
             .arg(&args.remote)
@@ -165,7 +163,7 @@ async fn async_main() -> Result<()> {
         );
     }
 
-    if needs_refresh(&args, |s| ssh.command(s)).await? {
+    if needs_refresh(&args, Some(&ssh)).await? {
         anyhow::bail!(
             concat!(
                 "We tried syncing your credentials to {} but they are still invalid.\n",
@@ -182,18 +180,21 @@ async fn async_main() -> Result<()> {
     Ok(())
 }
 
-async fn needs_refresh<'a>(args: &'a Args, f: impl FnOnce(&'a str) -> Command) -> Result<bool> {
-    let mut child = f(&args.credential_helper)
+async fn needs_refresh<'a>(args: &'a Args, ssh: Option<&'a SshMux<'a, String>>) -> Result<bool> {
+    let helper = &args.credential_helper;
+    let mut cmd = ssh
+        .map(|ssh| ssh.command(helper))
+        .unwrap_or_else(|| Command::new(helper));
+    let mut child = cmd
         .arg("get")
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| {
-            format!(
-                "failed to run {} on {}",
-                &args.credential_helper, &args.host
-            )
+            ssh.is_some()
+                .then(|| format!("failed to run {helper} on {}", &args.host))
+                .unwrap_or_else(|| format!("failed to run {helper}"))
         })?;
     let mut stdin = child.stdin.take().context("failed to open stdin")?;
     let test_string = format!(concat!(r#"{{"uri":"https://{}"}}"#, "\n"), &args.remote);

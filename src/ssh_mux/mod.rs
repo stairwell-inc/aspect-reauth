@@ -20,7 +20,7 @@ use std::ffi::OsStr;
 
 use anyhow::{Context, Result};
 use config::infer_create_socket;
-use smol::process::{Command, Stdio};
+use smol::process::{Child, Command, Stdio};
 use temp_socket::TempSocket;
 
 #[derive(Clone, Copy)]
@@ -111,6 +111,59 @@ impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
             command,
         ]);
         ret
+    }
+
+    /// Forward a local loopback TCP port to the same port on the remote host's loopback interface.
+    ///
+    /// When we own a temporary control master, the forward is added to it with `-O forward` and
+    /// lives until the master exits, so `None` is returned. Otherwise a dedicated `ssh -N` process
+    /// that bypasses any user-configured control master is started and returned; the forward lives
+    /// until that process is killed (which happens when it is dropped).
+    pub async fn forward_local(&self, port: u16) -> Result<Option<Child>> {
+        let spec = format!("{port}:127.0.0.1:{port}");
+        let mut cmd = Command::new("ssh");
+        cmd.args(self.ssh_args);
+        if let Some(socket) = &self.socket {
+            let output = cmd
+                .arg("-S")
+                .arg(socket)
+                .args(["-Oforward", "-L", &spec, "--", self.host])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output()
+                .await
+                .context("failed to request SSH port forward")?;
+            if !output.status.success() {
+                anyhow::bail!(
+                    "ssh -O forward -L {spec} {}: {}\n\n{}",
+                    self.host,
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                );
+            }
+            return Ok(None);
+        }
+        let child = cmd
+            .args([
+                "-NxT",
+                "-oControlPath=none",
+                "-oExitOnForwardFailure=yes",
+                "-oPermitLocalCommand=no",
+                "-oRemoteCommand=none",
+                "-oForwardAgent=no",
+                "-oBatchMode=yes",
+                "-L",
+                &spec,
+                "--",
+                self.host,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .context("failed to start SSH port forward")?;
+        Ok(Some(child))
     }
 
     pub async fn cleanup(&mut self) -> Result<()> {

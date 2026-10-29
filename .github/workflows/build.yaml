@@ -74,6 +74,8 @@ jobs:
     - run: rustup target add ${{ env.target }}
 
     - run: cargo build --locked --profile ${{ env.profile }} --target ${{ env.target }}
+    - run: cargo test --locked --profile ${{ env.profile }} --target ${{ env.target }}
+      if: matrix.os == 'ubuntu'
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
         name: aspect-reauth-${{ env.target }}

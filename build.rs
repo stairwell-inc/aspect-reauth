@@ -18,6 +18,8 @@ use std::env::{self, VarError};
 fn main() -> Result<(), VarError> {
     build_env_var("ASPECT_REMOTE", "aw-remote-ext.buildremote.stairwell.io")?;
     build_env_var("ASPECT_CREDENTIAL_HELPER", "aspect-credential-helper")?;
+    build_env_var("ASPECT_BIN", "aspect")?;
+    build_env_var("ASPECT_DEPLOYMENT", "stairwell")?;
     Ok(())
 }
 

@@ -81,6 +81,3 @@ jobs:
         name: aspect-reauth-${{ env.target }}
         path: target/${{ env.target }}/${{ env.profile }}/aspect-reauth${{ env.suffix }}
         retention-days: ${{ env.retention_days }}
-
-    - run: cargo publish --locked --dry-run --target ${{ env.target }}
-      if: inputs.release

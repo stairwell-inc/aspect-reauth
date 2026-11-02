@@ -6,6 +6,7 @@ edition = "2024"
 repository = "https://github.com/stairwell-inc/aspect-reauth"
 license = "Apache-2.0"
 description = "Sync fresh Aspect credentials with your dev VM"
+publish = false
 
 exclude = [
     ".github/**",

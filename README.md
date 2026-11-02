@@ -22,8 +22,12 @@ Because we directly call the macOS keychain APIs ourselves, assuming you trust t
 
 ## Installation
 
+Stairwell laptops receive the signed, notarized installer package through device management; no manual install is needed.
+
+To build and install from source:
+
 ```sh
-cargo install aspect-reauth
+cargo install --locked --git https://github.com/stairwell-inc/aspect-reauth
 ```
 
 You may want to customize the default remote name, the default deployment name, or the default names of the Aspect CLI and credential helper binaries. These can be customized by setting the `ASPECT_REMOTE`, `ASPECT_DEPLOYMENT`, `ASPECT_BIN`, and `ASPECT_CREDENTIAL_HELPER` environment variables. If they are set at runtime, they override the defaults; if they are set at build time, they become the defaults for that binary.
@@ -33,7 +37,7 @@ E.g.:
 ```sh
 env ASPECT_REMOTE=aw-remote-ext.mydomain.example \
     ASPECT_CREDENTIAL_HELPER=credential-helper \
-    cargo install aspect-reauth
+    cargo install --locked --git https://github.com/stairwell-inc/aspect-reauth
 ```
 
 ## FAQ

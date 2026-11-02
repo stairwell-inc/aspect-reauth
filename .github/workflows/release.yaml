@@ -11,21 +11,6 @@ jobs:
     with:
       release: true
 
-  publish:
-    name: Publish to crates.io
-    permissions:
-      id-token: write
-    needs: build
-    runs-on: ubuntu-latest
-    environment: crates-io
-    steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-    - uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe  # v1.0.4
-      id: auth
-    - run: cargo publish --no-verify --locked
-      env:
-        CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-
   macos-release:
     name: macOS Release
     needs: build

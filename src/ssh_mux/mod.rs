@@ -16,11 +16,14 @@
 mod config;
 mod temp_socket;
 
-use std::ffi::OsStr;
+use std::{ffi::OsStr, process::ExitStatus};
 
 use anyhow::{Context, Result};
 use config::infer_create_socket;
-use smol::process::{Command, Stdio};
+use smol::{
+    future,
+    process::{Child, Command, Stdio},
+};
 use temp_socket::TempSocket;
 
 #[derive(Clone, Copy)]
@@ -113,6 +116,75 @@ impl<'a, T: AsRef<OsStr>> SshMux<'a, T> {
         ret
     }
 
+    /// Forward a local loopback TCP port to the same port on the remote host's loopback interface.
+    ///
+    /// The forward is added to a control master when one is available: our own temporary master
+    /// if we created one, or else a running master from the user's SSH configuration (so that no
+    /// second connection, and no second authentication, is needed). Failing both, a dedicated
+    /// `ssh -N` process that bypasses any control master is started. See [`Forward`] for how each
+    /// is torn down.
+    pub async fn forward_local(&self, port: u16) -> Result<Forward> {
+        let spec = format!("{port}:127.0.0.1:{port}");
+        if self.socket.is_some() {
+            run_control(self.control_command("forward", &spec)).await?;
+            return Ok(Forward::OwnMaster);
+        }
+        if self.user_master_running().await {
+            run_control(self.control_command("forward", &spec)).await?;
+            return Ok(Forward::UserMaster(self.control_command("cancel", &spec)));
+        }
+        let child = Command::new("ssh")
+            .args(self.ssh_args)
+            .args([
+                "-NxT",
+                "-oControlPath=none",
+                "-oExitOnForwardFailure=yes",
+                "-oPermitLocalCommand=no",
+                "-oRemoteCommand=none",
+                "-oForwardAgent=no",
+                "-oBatchMode=yes",
+                "-L",
+                &spec,
+                "--",
+                self.host,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .context("failed to start SSH port forward")?;
+        Ok(Forward::Process(child))
+    }
+
+    /// Whether the user's SSH configuration has a control master running for the host.
+    async fn user_master_running(&self) -> bool {
+        Command::new("ssh")
+            .args(self.ssh_args)
+            .args(["-Ocheck", "--", self.host])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .is_ok_and(|s| s.success())
+    }
+
+    /// An `ssh -O <op> -L <spec>` control command for our temporary master if we have one, or for
+    /// the user's configured master otherwise.
+    fn control_command(&self, op: &str, spec: &str) -> Command {
+        let mut cmd = Command::new("ssh");
+        cmd.args(self.ssh_args);
+        if let Some(socket) = &self.socket {
+            cmd.arg("-S").arg(socket);
+        }
+        cmd.arg(format!("-O{op}"))
+            .args(["-L", spec, "--", self.host])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        cmd
+    }
+
     pub async fn cleanup(&mut self) -> Result<()> {
         let Some(socket) = self.socket.take() else {
             return Ok(());
@@ -142,11 +214,100 @@ impl<T: AsRef<OsStr>> Drop for SshMux<'_, T> {
     }
 }
 
+/// A local port forward created by [`SshMux::forward_local`].
+pub enum Forward {
+    /// Held by our temporary control master; torn down when the master exits.
+    OwnMaster,
+    /// Held by the user's control master, which outlives us; cancelled on drop with the contained
+    /// `ssh -O cancel` command.
+    UserMaster(Command),
+    /// Held by a dedicated `ssh -N` process; killed on drop.
+    Process(Child),
+}
+
+impl Forward {
+    /// Wait for the forward to go away on its own, returning the exit status of the process that
+    /// held it. Only a dedicated process is watched; a forward held by a control master never
+    /// completes here, since the master's demise also ends every command multiplexed over it.
+    pub async fn closed(&mut self) -> std::io::Result<ExitStatus> {
+        match self {
+            Forward::Process(child) => child.status().await,
+            Forward::OwnMaster | Forward::UserMaster(_) => future::pending().await,
+        }
+    }
+}
+
+impl Drop for Forward {
+    fn drop(&mut self) {
+        if let Forward::UserMaster(cancel) = self {
+            smol::block_on(async {
+                if let Err(e) = run_control(cancel).await {
+                    eprintln!("cancel ssh port forward: {e}");
+                }
+            });
+        }
+    }
+}
+
+/// Run an `ssh -O` control command, failing with its stderr if it does not succeed.
+async fn run_control(mut cmd: impl std::borrow::BorrowMut<Command>) -> Result<()> {
+    let output = cmd
+        .borrow_mut()
+        .output()
+        .await
+        .context("failed to run ssh control command")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "ssh control command: {}\n\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+    }
+    Ok(())
+}
+
 impl CreateSocket {
     fn into_option_bool(self) -> Option<bool> {
         match self {
             CreateSocket::Infer => None,
             CreateSocket::Specify(b) => Some(b),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_forward_reports_exit() {
+        smol::block_on(async {
+            let child = Command::new("false").spawn().unwrap();
+            let status = Forward::Process(child).closed().await.unwrap();
+            assert!(!status.success());
+        });
+    }
+
+    #[test]
+    fn master_forward_never_closes() {
+        smol::block_on(async {
+            let mut forward = Forward::OwnMaster;
+            let closed = future::or(async { forward.closed().await.ok() }, async {
+                smol::Timer::after(std::time::Duration::from_millis(50)).await;
+                None
+            })
+            .await;
+            assert!(closed.is_none());
+        });
+    }
+
+    #[test]
+    fn user_master_forward_cancels_on_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("cancelled");
+        let mut cancel = Command::new("touch");
+        cancel.arg(&marker);
+        drop(Forward::UserMaster(cancel));
+        assert!(marker.exists());
     }
 }

@@ -1,6 +1,22 @@
 # Aspect credential sync tool
 
-This tool syncs your [Aspect][0] credentials with a remote Linux VM. It first checks whether the credentials are expired (unless `--force` is passed), and if so, runs `aspect-credential-helper login` with your configured remote. Then, it reads the credential out of your OS's keychain and stores it in your Linux VM's [keyutils][1] keychain via `ssh devbox keyctl`.
+This tool keeps your [Aspect][0] credentials fresh on a remote Linux VM. It supports two modes, chosen automatically based on the Aspect Workflows version of your configured remote.
+
+### Aspect Workflows v6
+
+v6 deployments authenticate through the [Aspect CLI][3], which must be installed on the VM. The tool asks the VM's Aspect CLI (acting as a Bazel credential helper) whether it holds a valid credential for the remote. If it does not, the tool:
+
+1. Runs `aspect auth configure <remote> --name <deployment>` on the VM if no deployment there owns the remote yet.
+2. Runs `aspect auth login --deployment <deployment>` on the VM.
+3. Forwards the login's loopback callback port from your machine to the VM over SSH, and opens the login URL in your local browser.
+
+The VM then holds its own credential, including a refresh token, and renews it on its own; nothing is copied off your machine and no local Aspect tooling is required. Re-running the tool is a no-op until the VM's credential can no longer be refreshed.
+
+The deployment name defaults to `stairwell` and can be changed with `--deployment` or the `ASPECT_DEPLOYMENT` environment variable. The Aspect CLI executable on the VM defaults to `aspect` and can be changed with `--aspect-bin` or `ASPECT_BIN`. Pass `--org` if your account belongs to more than one organization.
+
+### Earlier versions
+
+If the remote is not a v6 deployment (`aspect auth configure` rejects it) or the VM has no Aspect CLI, the tool falls back to the original flow. It first checks whether the credentials are expired (unless `--force` is passed), and if so, runs `aspect-credential-helper login` with your configured remote. Then, it reads the credential out of your OS's keychain and stores it in your Linux VM's [keyutils][1] keychain via `ssh devbox keyctl`.
 
 Because we directly call the macOS keychain APIs ourselves, assuming you trust this program, you should be able to push "Always Allow" to prevent from having to type your password twice every time you run this. (For some reason even if you push "Always Allow", you still need to type your password once if this needs to sync your credential.)
 
@@ -10,7 +26,7 @@ Because we directly call the macOS keychain APIs ourselves, assuming you trust t
 cargo install aspect-reauth
 ```
 
-You may want to customize the default remote name or possibly the default name of the Aspect credential helper binary. These can be customized by setting the `ASPECT_REMOTE` and `ASPECT_CREDENTIAL_HELPER` environment variables. If they are set at runtime, they override the defaults; if they are set at build time, they become the defaults for that binary.
+You may want to customize the default remote name, the default deployment name, or the default names of the Aspect CLI and credential helper binaries. These can be customized by setting the `ASPECT_REMOTE`, `ASPECT_DEPLOYMENT`, `ASPECT_BIN`, and `ASPECT_CREDENTIAL_HELPER` environment variables. If they are set at runtime, they override the defaults; if they are set at build time, they become the defaults for that binary.
 
 E.g.:
 
@@ -33,3 +49,4 @@ Aspect tries to do a little better than this. It wants you to run its credential
 [0]: https://www.aspect.build/
 [1]: https://man7.org/linux/man-pages/man7/keyutils.7.html
 [2]: https://docs.aspect.build/workflows/features/external-remote/#oidc
+[3]: https://aspect.build/docs/cli/authentication

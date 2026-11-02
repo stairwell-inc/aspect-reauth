@@ -20,19 +20,19 @@
 //! run the login on the remote host itself and tunnel its loopback OAuth callback back to this
 //! machine's browser over SSH. The remote host then keeps its own credential fresh.
 
-use std::time::Duration;
+use std::process::ExitStatus;
 
 use anyhow::{Context, Result};
 use regex::Regex;
 use smol::{
-    Timer,
+    future,
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Command, Stdio},
     stream::StreamExt,
 };
 
 use crate::Args;
-use crate::ssh_mux::SshMux;
+use crate::ssh_mux::{Forward, SshMux};
 
 /// Error text `aspect auth configure` prints for a host that is not a v6 deployment.
 const NOT_A_DEPLOYMENT: &str = "is not an Aspect Workflows deployment authentication endpoint";
@@ -43,6 +43,12 @@ const COMMAND_NOT_FOUND: i32 = 127;
 /// How long the remote login waits for the browser callback before giving up. Bounds the lifetime
 /// of the remote process if this one goes away without the callback ever arriving.
 const LOGIN_TIMEOUT: &str = "10m";
+
+/// What `login` is waiting on next: a line of login output, or the callback forward going away.
+enum Event {
+    Line(Option<std::io::Result<String>>),
+    ForwardClosed(std::io::Result<ExitStatus>),
+}
 
 /// The remote host's credential state for the configured Aspect remote.
 enum Status {
@@ -181,14 +187,35 @@ async fn login(args: &Args, ssh: &SshMux<'_, String>) -> Result<()> {
         .arg("2>&1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .with_context(|| format!("failed to run {} on {}", &args.aspect_bin, &args.host))?;
     let stdout = child.stdout.take().context("failed to open stdout")?;
     let mut lines = BufReader::new(stdout).lines();
 
-    let mut forward = None;
-    while let Some(line) = lines.next().await {
-        let line = line.context("failed reading login output")?;
+    let mut forward: Option<Forward> = None;
+    loop {
+        // Watch the callback forward for the whole login, not just its startup: a dedicated SSH
+        // connection can take a while to fail (e.g. behind a slow proxy), and if it dies the
+        // browser callback has nowhere to go and the remote login would wait out its timeout.
+        let event = future::or(async { Event::Line(lines.next().await) }, async {
+            match forward.as_mut() {
+                Some(f) => Event::ForwardClosed(f.closed().await),
+                None => future::pending().await,
+            }
+        })
+        .await;
+        let line = match event {
+            Event::Line(None) => break,
+            Event::Line(Some(line)) => line.context("failed reading login output")?,
+            Event::ForwardClosed(status) => {
+                let _ = child.kill();
+                anyhow::bail!(
+                    "ssh port forward for the login callback exited ({}); see the ssh error above",
+                    status.map_or_else(|e| e.to_string(), |s| s.to_string()),
+                );
+            }
+        };
         println!("{line}");
         if forward.is_some() {
             continue;
@@ -196,19 +223,11 @@ async fn login(args: &Args, ssh: &SshMux<'_, String>) -> Result<()> {
         let Some((url, port)) = login_url(&line) else {
             continue;
         };
-        let mut tunnel = ssh
-            .forward_local(port)
-            .await
-            .with_context(|| format!("failed to forward login callback port {port}"))?;
-        if let Some(tunnel) = &mut tunnel {
-            // The dedicated forward exits promptly if it cannot bind or connect; catch that before
-            // sending the user off to a browser whose callback would go nowhere.
-            Timer::after(Duration::from_secs(1)).await;
-            if let Some(status) = tunnel.try_status()? {
-                anyhow::bail!("ssh port forward for login callback exited: {status}");
-            }
-        }
-        forward = Some(tunnel);
+        forward = Some(
+            ssh.forward_local(port)
+                .await
+                .with_context(|| format!("failed to forward login callback port {port}"))?,
+        );
         open_browser(url).await;
     }
 

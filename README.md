@@ -26,10 +26,10 @@ On a Mac, install the signed, notarized release from Stairwell's private Homebre
 
 ```sh
 brew tap stairwell-inc/tap
-brew install aspect-reauth
+brew install stairwell-inc/tap/aspect-reauth
 ```
 
-`brew upgrade aspect-reauth` picks up new releases. Each tagged release publishes `aspect-reauth-<version>-darwin-universal.tar.gz` (a universal binary) to this repository's GitHub Releases and updates the formula in [stairwell-inc/homebrew-tap](https://github.com/stairwell-inc/homebrew-tap); the tap's README covers setup and troubleshooting.
+Install by the fully qualified name: Homebrew 6.0 and later refuse to load formulae from a third-party tap until it is trusted, and a fully qualified install trusts that formula. `brew upgrade aspect-reauth` picks up new releases. Each tagged release publishes `aspect-reauth-<version>-darwin-universal.tar.gz` (a universal binary) to this repository's GitHub Releases and updates the formula in [stairwell-inc/homebrew-tap](https://github.com/stairwell-inc/homebrew-tap); the tap's README covers setup and troubleshooting.
 
 To build and install from source:
 

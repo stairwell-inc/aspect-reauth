@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     uses: ./.github/workflows/build.yaml
@@ -16,6 +19,8 @@ jobs:
     needs: build
     runs-on: [self-hosted, macOS]
     environment: macos
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
     steps:
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
@@ -42,30 +47,110 @@ jobs:
           ./aspect-reauth --version | cut -d' ' -f2
         } >> $GITHUB_OUTPUT
 
+    # The Homebrew formula derives its download URL from the version, so a tag
+    # that disagrees with Cargo.toml would publish a formula pointing at the
+    # wrong release.
+    - name: Check tag matches version
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        version: ${{ steps.get-version.outputs.version }}
+      run: |
+        if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+          echo "tag $GITHUB_REF_NAME does not match binary version $version" >&2
+          exit 1
+        fi
+
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
         name: aspect-reauth-signed-darwin
         path: aspect-reauth
 
-    - env:
+    # A bare Mach-O cannot be stapled, so the binary is notarized inside a zip
+    # and Gatekeeper finds its ticket online. Homebrew downloads with curl,
+    # which sets no quarantine attribute, so Homebrew installs do not depend
+    # on the ticket; a binary copied out of the tarball by hand does.
+    - name: Notarize
+      env:
         NOTARY_PASS: ${{ secrets.NOTARY_PASS }}
         DEV_ACCOUNT: ${{ secrets.DEV_ACCOUNT }}
       run: |
         xcrun notarytool store-credentials --apple-id "$DEV_ACCOUNT" --team-id 677UQVFGY8 --password "$NOTARY_PASS" notary-aspect-reauth
-        mkdir .root.$$
-        trap "rm -rf .root.$$" EXIT
-        cp aspect-reauth .root.$$
-        pkgbuild --root .root.$$ \
-                 --identifier com.stairwell.pkg.aspect-reauth \
-                 --version "${{ steps.get-version.outputs.version }}" \
-                 --install-location /usr/local/bin \
-                 --sign "Developer ID Installer: Stairwell, Inc. (677UQVFGY8)" \
-                 aspect-reauth.pkg
-        xcrun notarytool submit aspect-reauth.pkg --keychain-profile notary-aspect-reauth --wait
-        xcrun stapler staple aspect-reauth.pkg
-        spctl --assess -vv --type install aspect-reauth.pkg
+        ditto -c -k aspect-reauth notarize.zip
+        trap 'rm -f notarize.zip' EXIT
+        xcrun notarytool submit notarize.zip --keychain-profile notary-aspect-reauth --wait
+
+    - name: Package
+      env:
+        version: ${{ steps.get-version.outputs.version }}
+      run: |
+        COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "aspect-reauth-${version}-darwin-universal.tar.gz" aspect-reauth
 
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
       with:
-        name: aspect-reauth-pkg-darwin
-        path: aspect-reauth.pkg
+        name: aspect-reauth-tarball-darwin
+        path: aspect-reauth-*-darwin-universal.tar.gz
+
+  github-release:
+    name: GitHub Release
+    needs: macos-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha256: ${{ steps.sha256.outputs.sha256 }}
+    steps:
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+      with:
+        name: aspect-reauth-tarball-darwin
+    - id: sha256
+      env:
+        version: ${{ needs.macos-release.outputs.version }}
+      run: |
+        tarball="aspect-reauth-${version}-darwin-universal.tar.gz"
+        sha256sum "$tarball" | tee "$tarball.sha256"
+        echo "sha256=$(cut -d' ' -f1 "$tarball.sha256")" >> "$GITHUB_OUTPUT"
+    - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+      with:
+        files: |
+          aspect-reauth-${{ needs.macos-release.outputs.version }}-darwin-universal.tar.gz
+          aspect-reauth-${{ needs.macos-release.outputs.version }}-darwin-universal.tar.gz.sha256
+        fail_on_unmatched_files: true
+        generate_release_notes: true
+
+  homebrew-tap:
+    name: Update Homebrew tap
+    needs: [macos-release, github-release]
+    runs-on: ubuntu-latest
+    # The environment holds the tap's deploy key and deploys only from v*
+    # tags, so no other workflow run in this repository can read the key.
+    environment: homebrew-tap
+    concurrency: homebrew-tap
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      with:
+        path: aspect-reauth
+    # Push access to the tap is a deploy key managed in the depot
+    # (production/terraform/github/homebrew_tap.tf); this environment secret
+    # is its private half.
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      with:
+        repository: stairwell-inc/homebrew-tap
+        ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        path: homebrew-tap
+    - env:
+        version: ${{ needs.macos-release.outputs.version }}
+        sha256: ${{ needs.github-release.outputs.sha256 }}
+      run: |
+        mkdir -p homebrew-tap/Formula
+        aspect-reauth/scripts/homebrew-formula.sh "$version" "$sha256" > homebrew-tap/Formula/aspect-reauth.rb
+        cd homebrew-tap
+        git add Formula/aspect-reauth.rb
+        if git diff --cached --quiet; then
+          echo "formula already at $version"
+          exit 0
+        fi
+        git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "aspect-reauth $version"
+        git push origin HEAD

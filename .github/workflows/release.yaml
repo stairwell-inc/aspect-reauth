@@ -122,14 +122,17 @@ jobs:
     name: Update Homebrew tap
     needs: [macos-release, github-release]
     runs-on: ubuntu-latest
+    # The environment holds the tap's deploy key and deploys only from v*
+    # tags, so no other workflow run in this repository can read the key.
+    environment: homebrew-tap
     concurrency: homebrew-tap
     steps:
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
       with:
         path: aspect-reauth
     # Push access to the tap is a deploy key managed in the depot
-    # (production/terraform/github/homebrew_tap.tf); this secret is its
-    # private half.
+    # (production/terraform/github/homebrew_tap.tf); this environment secret
+    # is its private half.
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
       with:
         repository: stairwell-inc/homebrew-tap

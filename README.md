@@ -22,7 +22,14 @@ Because we directly call the macOS keychain APIs ourselves, assuming you trust t
 
 ## Installation
 
-Stairwell laptops receive the signed, notarized installer package through device management; no manual install is needed.
+On a Mac, install the signed, notarized release from Stairwell's private Homebrew tap. The tap is a private repository, so git needs GitHub credentials to clone it; if you use the GitHub CLI, `gh auth setup-git` configures them.
+
+```sh
+brew tap stairwell-inc/tap
+brew install aspect-reauth
+```
+
+`brew upgrade aspect-reauth` picks up new releases. Each tagged release publishes `aspect-reauth-<version>-darwin-universal.tar.gz` (a universal binary) to this repository's GitHub Releases and updates the formula in [stairwell-inc/homebrew-tap](https://github.com/stairwell-inc/homebrew-tap); the tap's README covers setup and troubleshooting.
 
 To build and install from source:
 
